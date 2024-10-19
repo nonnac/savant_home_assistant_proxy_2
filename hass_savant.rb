@@ -5,6 +5,13 @@ require 'socket'
 require 'json'
 require 'faye/websocket'
 require 'eventmachine'
+require 'logger'
+
+LOG = Logger.new(STDOUT)
+LOG.formatter = proc do |severity, datetime, _progname, msg|
+  "#{severity[0]}-#{datetime.strftime("%d %H:%M:%S")}: #{msg}\n"
+end
+LOG.level = Logger::DEBUG
 
 module HassMessageParsingMethods
   def new_data(js_data)
@@ -28,7 +35,7 @@ module HassMessageParsingMethods
   def entities_changed(entities)
     entities.each do |entity, state|
       state = state['+'] if state.key?('+')
-      p([:debug, ([:changed, entity, state])])
+      LOG.debug([:changed, entity, state])
       attributes = state['a']
       value = state['s']
       update?("#{entity}_state", 'state', value) if value
@@ -99,15 +106,15 @@ module HassMessageParsingMethods
   end
 
   def parse_result(js_data)
-    p([:debug, ([:jsdata, js_data])])
+    LOG.debug([:jsdata, js_data])
     res = js_data['result']
     return unless res
 
-    p([:debug, ([:parsing, res.length])])
+    LOG.debug([:parsing, res.length])
     return parse_state(res) unless res.is_a?(Array)
 
     res.each do |e|
-      p([:debug, ([:parsing, e.length, e.keys])])
+      LOG.debug([:parsing, e.length, e.keys])
       parse_state(e)
     end
   end
@@ -246,65 +253,57 @@ module HassRequests
     )
   end
 
-  def climate_set_low(entity_id, low_level)
+  def climate_set_temperature_range(entity_id, temp_low, temp_high)
     send_data(
       type: :call_service, domain: :climate, service: :set_temperature,
-      service_data: { target_temp_low: level },
+      service_data: { target_temp_low: temp_low, target_temp_high: temp_high },
       target: { entity_id: entity_id }
     )
   end
 
-  def climate_set_high(entity_id, high_level)
+  def remote_on(entity_id)
     send_data(
-      type: :call_service, domain: :climate, service: :set_temperature,
-      service_data: { target_temp_high: level },
+      type: :call_service, domain: :remote, service: :turn_on,
       target: { entity_id: entity_id }
     )
   end
-end
 
-def remote_on(entity_id)
-  send_data(
-    type: :call_service, domain: :remote, service: :turn_on,
-    target: { entity_id: entity_id }
-  )
-end
+  def remote_off(entity_id)
+    send_data(
+      type: :call_service, domain: :remote, service: :turn_off,
+      target: { entity_id: entity_id }
+    )
+  end
 
-def remote_off(entity_id)
-  send_data(
-    type: :call_service, domain: :remote, service: :turn_off,
-    target: { entity_id: entity_id }
-  )
-end
+  def remote_send_command(entity_id, command)
+    send_data(
+      type: :call_service, domain: :remote, service: :send_command,
+      service_data: { command: command },
+      target: { entity_id: entity_id }
+    )
+  end
 
-def remote_send_command(entity_id)
-  send_data(
-    type: :call_service, domain: :remote, service: :send_command,
-    service_data: { command: command },
-    target: { entity_id: entity_id }
-  )
-end
+  def media_player_on(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :turn_on,
+      target: { entity_id: entity_id }
+    )
+  end
 
-def media_player_on(entity_id)
-  send_data(
-    type: :call_service, domain: :media_player, service: :turn_on,
-    target: { entity_id: entity_id }
-  )
-end
+  def media_player_off(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :turn_off,
+      target: { entity_id: entity_id }
+    )
+  end
 
-def media_player_off(entity_id)
-  send_data(
-    type: :call_service, domain: :media_player, service: :turn_off,
-    target: { entity_id: entity_id }
-  )
-end
-
-def mediaplayer_send_command(entity_id)
-  send_data(
-    type: :call_service, domain: :remote, service: :send_command,
-    service_data: { command: command },
-    target: { entity_id: entity_id }
-  )
+  def mediaplayer_send_command(entity_id, command)
+    send_data(
+      type: :call_service, domain: :remote, service: :send_command,
+      service_data: { command: command },
+      target: { entity_id: entity_id }
+    )
+  end
 end
 
 class Hass
@@ -314,16 +313,21 @@ class Hass
   POSTFIX = "\n"
 
   def initialize(hass_address, token, client, filter = ['all'])
-    p([:debug, :connecting_to, hass_address])
+    LOG.debug([:connecting_to, hass_address])
     @address = hass_address
     @token = token
     @filter = filter
     @client = client
-    @out_buf = []
-    @print_proc = proc { next_buf }
+    # @out_buf = []
+    # @print_proc = proc { next_buf }
+    @id = 0
 
-    listen_to_savant
-    connect_websocket
+    # Moved initialization code that requires EM into EM.run block
+    EM.schedule do
+      connect_websocket
+    end
+
+    # listen_to_savant
   end
 
   def subscribe_entities(*entity_id)
@@ -336,60 +340,8 @@ class Hass
   end
 
   def send_data(**data)
-    p([:debug, data])
+    LOG.debug(data)
     send_json(data)
-  end
-
-  private
-
-  def connect_websocket
-    @id = 0
-
-    EM.run do
-      #ws_url = "ws://#{@address}/api/websocket"
-      ws_url = @address
-      @hass_ws = Faye::WebSocket::Client.new(ws_url)
-
-      @hass_ws.on :open do |_event|
-        p([:debug, :ws_connected])
-      end
-
-      @hass_ws.on :message do |event|
-        handle_message(event.data)
-      end
-
-      @hass_ws.on :close do |event|
-        p([:debug, :ws_disconnected, event.code, event.reason])
-        EM.stop
-      end
-
-      @hass_ws.on :error do |event|
-        p([:error, :ws_error, event.message])
-      end
-    end
-  end
-
-  def listen_to_savant
-    Thread.new do
-      p([:starting_listening_to_savant])
-      loop do
-        request = @client.gets&.chomp
-        if request
-          p([:debug, :from_savant, request])
-          from_savant(request)
-        else
-          p([:debug, :savant_disconnected])
-          @client.close
-          break
-        end
-      end
-    end
-  end
-
-  def hass_request?(cmd)
-    cmd = cmd.to_sym
-    p [:debug, cmd, HassRequests.instance_methods(false)]
-    HassRequests.instance_methods(false).include?(cmd.to_sym)
   end
 
   def from_savant(req)
@@ -398,15 +350,44 @@ class Hass
     elsif cmd == 'subscribe_entity' then subscribe_entities(params)
     elsif cmd == 'state_filter' then @filter = params
     elsif hass_request?(cmd) then send(cmd, *params)
-    else p([:error, [:unknown_cmd, cmd, req]])
+    else LOG.error([:unknown_cmd, cmd, req])
     end
+  end
+
+  private
+
+  def connect_websocket
+    ws_url = @address
+    @hass_ws = Faye::WebSocket::Client.new(ws_url)
+
+    @hass_ws.on :open do |_event|
+      LOG.debug([:ws_connected])
+    end
+
+    @hass_ws.on :message do |event|
+      handle_message(event.data)
+    end
+
+    @hass_ws.on :close do |event|
+      LOG.debug([:ws_disconnected, event.code, event.reason])
+    end
+
+    @hass_ws.on :error do |event|
+      LOG.error([:ws_error, event.message])
+    end
+  end
+
+  def hass_request?(cmd)
+    cmd = cmd.to_sym
+    LOG.debug([cmd, HassRequests.instance_methods(false)])
+    HassRequests.instance_methods(false).include?(cmd.to_sym)
   end
 
   def handle_message(data)
     return unless (message = JSON.parse(data))
-    return p([:error, [:request_failed, message]]) if message['success'] == false
+    return LOG.error([:request_failed, message]) if message['success'] == false
 
-    p([:debug, [:handling, message]])
+    LOG.debug([:handling, message])
     handle_hash(message)
   end
 
@@ -415,13 +396,13 @@ class Hass
     when 'auth_required' then send_auth
     when 'event' then parse_event(message['event'])
     when 'result' then parse_result(message)
-    when 'pong' then p([:debug, :pong_received])
+    when 'pong' then LOG.debug([:pong_received])
     end
   end
 
   def send_auth
     auth_message = { type: 'auth', access_token: @token }.to_json
-    p ([:debug, [:sending_auth]])
+    LOG.debug([:sending_auth])
     @hass_ws.send(auth_message)
   end
 
@@ -429,7 +410,7 @@ class Hass
     @id += 1
     hash['id'] = @id
     hash = hash.to_json
-    p([:debug, [:send, hash]])
+    LOG.debug([:send, hash])
     @hass_ws.send(hash)
   end
 
@@ -446,38 +427,64 @@ class Hass
       [m.to_s.gsub(POSTFIX, ''), POSTFIX]
     end
   end
-
-  def next_buf
-    @client.puts(@out_buf.shift)
-    EM.next_tick(@print_proc) unless @out_buf.empty?
-  end
 end
 
 # TCP Server that creates a Hass instance for each connected client
-
-Thread.abort_on_exception = true
 def start_tcp_server(hass_address, token, port = 8080)
   server = TCPServer.new(port)
-  p([:info, :server_started, port])
+  LOG.info([:server_started, port])
 
   loop do
     client = server.accept
-    p([:info, :client_connected, client.peeraddr])
+    LOG.info([:client_connected, client.peeraddr])
 
     # Create a new Hass instance for the connected client
-    Thread.new do
+    EM.schedule do
       begin
+        client.puts('welcome')
         hass_instance = Hass.new(hass_address, token, client)
-        p([:info, :hass_instance_created, hass_instance])
+        LOG.info([:hass_instance_created, hass_instance])
       rescue => e
-        p([:error, :client_error, e.message])
-        client.close
+        LOG.error([:client_error, e.message])
+        client&.close unless client.closed?
       end
     end
   end
 end
 
-# Example usage:
-# start_tcp_server('hass.local', 'your_long_lived_token')
+class ClientConnection < EM::Connection
+  def initialize(hass_address, token)
+    @hass_address = hass_address
+    @token = token
 
-start_tcp_server(WS_URL, WS_TOKEN)
+    LOG.info([:client_connected, get_peername])
+
+    # Create the Hass instance associated with this client
+    @hass_instance = Hass.new(@hass_address, @token, self)
+  end
+
+  def post_init
+    send_data("welcome\n")
+  end
+
+  def receive_data(data)
+    data.chomp!
+    LOG.debug([:from_savant, data])
+    @hass_instance.from_savant(data)
+  end
+
+  def unbind
+    LOG.debug([:savant_disconnected])
+  end
+
+  # Method to send data to the client
+  def puts(data)
+    send_data("#{data}\n")
+  end
+end
+
+EM.run do
+  # Start the TCP server within the reactor
+  EM.start_server('0.0.0.0', TCP_PORT, ClientConnection, WS_URL, WS_TOKEN)
+  LOG.info([:server_started, TCP_PORT])
+end
