@@ -3,7 +3,7 @@ FROM ruby:latest
 # Install any dependencies your Ruby script requires
 RUN apt-get update && apt-get install -y build-essential
 
-RUN gem install faye-websocket eventmachine
+RUN gem install websocket-driver
 
 WORKDIR /data
 

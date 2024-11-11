@@ -3,15 +3,87 @@ WS_URL = "ws://supervisor/core/api/websocket"
 TCP_PORT = 8080
 require 'socket'
 require 'json'
-require 'faye/websocket'
-require 'eventmachine'
+require 'fcntl'
 require 'logger'
+require 'websocket/driver'
+require 'fileutils'
 
-LOG = Logger.new(STDOUT)
+class AppLogger
+  def self.setup(file_name, log_path: "#{Dir.home}/logfiles", log_level: Logger::WARN)
+    script_name = File.basename(file_name, '.*')
+    log_path = "#{log_path}/#{script_name}/"
+    FileUtils.mkdir_p(log_path)
+
+    log_filename = "#{log_path}#{script_name}_#{Time.now.strftime('%Y-%m-%d')}.log"
+
+    logger = Logger.new(STDOUT, 10, 1024 * 1024 * 10)
+    logger.level = log_level
+
+    # Extend logger to include a method for logging with caller details
+    def logger.log_error(message)
+      error_location = caller(1..1).first # gets the immediate caller's details
+      error_message = "[#{error_location}] #{message}"
+      error(error_message)
+    end
+
+    logger
+  end
+end
+
+LOG = AppLogger.setup(__FILE__, log_level: Logger::DEBUG) unless defined?(LOG)
+# LOG = Logger.new(STDOUT)
 LOG.formatter = proc do |severity, datetime, _progname, msg|
   "#{severity[0]}-#{datetime.strftime("%d %H:%M:%S")}: #{msg}\n"
 end
 LOG.level = Logger::DEBUG
+
+
+
+module TimeoutInterface
+  def add_timeout(callback_proc, duration)
+    SelectController.instance.add_timeout(callback_proc, duration)
+  end
+
+  def timeout?(callback_proc)
+    SelectController.instance.timeout?(callback_proc)
+  end
+
+  def remove_timeout(callback_proc)
+    SelectController.instance.remove_timeout(callback_proc)
+  end
+end
+
+module SocketInterface
+  def read_proc(sock)
+    sock = sock.to_io if sock.respond_to?(:to_io)
+    SelectController.instance.readable?(sock)
+  end
+
+  def write_proc(sock)
+    sock = sock.to_io if sock.respond_to?(:to_io)
+    SelectController.instance.writable?(sock)
+  end
+
+  def add_readable(readable_proc, sock)
+    sock = sock.to_io if sock.respond_to?(:to_io)
+    SelectController.instance.add_sock(readable_proc, sock)
+  end
+
+  def remove_readable(sock)
+    sock = sock.to_io if sock.respond_to?(:to_io)
+    SelectController.instance.remove_sock(sock)
+  end
+
+  def add_writable(writable_proc, sock)
+    sock = sock.to_io if sock.respond_to?(:to_io)
+    SelectController.instance.add_sock(writable_proc, sock, for_write: true)
+  end
+
+  def remove_writable(sock)
+    sock = sock.to_io if sock.respond_to?(:to_io)
+    SelectController.instance.remove_sock(sock, for_write: true)
+  end
+end
 
 module HassMessageParsingMethods
   def new_data(js_data)
@@ -306,7 +378,9 @@ module HassRequests
   end
 end
 
+
 class Hass
+  include TimeoutInterface
   include HassMessageParsingMethods
   include HassRequests
 
@@ -318,16 +392,10 @@ class Hass
     @token = token
     @filter = filter
     @client = client
-    # @out_buf = []
-    # @print_proc = proc { next_buf }
+    @client.wait_io = true
     @id = 0
-
-    # Moved initialization code that requires EM into EM.run block
-    EM.schedule do
-      connect_websocket
-    end
-
-    # listen_to_savant
+    connect_websocket
+    @client.on(:data, method(:from_savant))
   end
 
   def subscribe_entities(*entity_id)
@@ -344,37 +412,73 @@ class Hass
     send_json(data)
   end
 
-  def from_savant(req)
-    cmd, *params = req.split(',')
-    if cmd == 'subscribe_events' then send_json(type: 'subscribe_events')
-    elsif cmd == 'subscribe_entity' then subscribe_entities(params)
-    elsif cmd == 'state_filter' then @filter = params
-    elsif hass_request?(cmd) then send(cmd, *params)
-    else LOG.error([:unknown_cmd, cmd, req])
+  def from_savant(reqs, _)
+    reqs.split("\n").each do |req|
+      # LOG.debug([:skipping_from_savant, req])
+      cmd, *params = req.split(',')
+      if cmd == 'subscribe_events' then send_json(type: 'subscribe_events')
+      elsif cmd == 'subscribe_entity' then subscribe_entities(params)
+      elsif cmd == 'state_filter' then @filter = params
+      elsif hass_request?(cmd) then send(cmd, *params)
+      else LOG.error([:unknown_cmd, cmd, req])
+      end
     end
+  end
+
+  def close_connection
+    LOG.debug([:closing_hass_connection])
+    stop_ping_timer
+    @hass_ws.close if @hass_ws
   end
 
   private
 
   def connect_websocket
     ws_url = @address
-    @hass_ws = Faye::WebSocket::Client.new(ws_url)
-
+    @hass_ws = NonBlockSocket::TCP::WebSocketClient.new(ws_url)
+  
     @hass_ws.on :open do |_event|
       LOG.debug([:ws_connected])
+      start_ping_timer
     end
-
+  
     @hass_ws.on :message do |event|
-      handle_message(event.data)
+      handle_message(event)
     end
-
+  
     @hass_ws.on :close do |event|
       LOG.debug([:ws_disconnected, event.code, event.reason])
+      stop_ping_timer
+      reconnect_websocket
     end
-
+  
     @hass_ws.on :error do |event|
-      LOG.error([:ws_error, event.message])
+      LOG.error([:ws_error, event])
+      @hass_ws = nil
+      reconnect_websocket
     end
+  end
+
+  def start_ping_timer
+    send_json(type: 'ping')
+    add_timeout(method(:start_ping_timer), 30)
+  end
+  
+  def stop_ping_timer
+    remove_timeout(method(:start_ping_timer))
+  end
+
+  def reconnect_websocket
+    return if @reconnecting
+    @reconnecting = true
+    LOG.info([:reconnecting_websocket])
+    add_timeout(
+      proc {
+        @reconnecting = false
+        connect_websocket
+      },
+      5
+    )
   end
 
   def hass_request?(cmd)
@@ -397,6 +501,7 @@ class Hass
     when 'event' then parse_event(message['event'])
     when 'result' then parse_result(message)
     when 'pong' then LOG.debug([:pong_received])
+    when 'auth_ok' then @client.wait_io = false
     end
   end
 
@@ -417,7 +522,7 @@ class Hass
   def to_savant(*message)
     return unless message
 
-    @client.puts(map_message(message).join)
+    @client.write(map_message(message).join)
   end
 
   def map_message(message)
@@ -429,62 +534,612 @@ class Hass
   end
 end
 
-# TCP Server that creates a Hass instance for each connected client
-def start_tcp_server(hass_address, token, port = 8080)
-  server = TCPServer.new(port)
-  LOG.info([:server_started, port])
+class EventBus
+  @instance = nil
+  class << self
+    def instance
+      @instance ||= new
+    end
 
-  loop do
-    client = server.accept
-    LOG.info([:client_connected, client.peeraddr])
+    def subscribe(...)
+      instance.subscribe(...)
+    end
 
-    # Create a new Hass instance for the connected client
-    EM.schedule do
-      begin
-        client.puts('welcome')
-        hass_instance = Hass.new(hass_address, token, client)
-        LOG.info([:hass_instance_created, hass_instance])
-      rescue => e
-        LOG.error([:client_error, e.message])
-        client&.close unless client.closed?
-      end
+    def unsubscribe(...)
+      instance.unsubscribe(...)
+    end
+
+    def publish(...)
+      instance.publish(...)
+    end
+  end
+
+  private_class_method :new
+
+  def initialize
+    @subscribers = {} # Hash.new { |h, k| h[k] = [] }
+  end
+
+  def subscribe(event_path, event_name, prc)
+    key = build_key(event_path, event_name)
+    LOG.debug([:new_subscription, key, prc])
+    @subscribers[key] ||= []
+    @subscribers[key] << prc
+  end
+
+  def unsubscribe(event_path, event_name, prc)
+    key = build_key(event_path, event_name)
+    LOG.debug([:unsubscribing, key, prc, @subscribers[key].length])
+    @subscribers[key].delete(prc)
+  end
+
+  def publish(event_path, event_name, *args)
+    LOG.debug([:event_published, event_path, event_name, args])
+    key = build_key(event_path, event_name)
+    notify_subscribers(key, args)
+  end
+
+  private
+
+  def build_key(path, name)
+    "#{path}:#{name}"
+  end
+
+  def notify_subscribers(key, args)
+    LOG.debug([:notifying, key, :count, @subscribers[key]&.length])
+    @subscribers[key]&.each { |handler| handler.call(args) }
+    # Notify wildcard subscribers
+    wildcard_key = "#{key.split(':').first}:*"
+    @subscribers[wildcard_key]&.each { |handler| handler.call(args) unless key == wildcard_key }
+  end
+end
+
+module SelectHandlerMethods
+  def handle_err(err_socks)
+    return unless err_socks.is_a?(Array)
+
+    LOG.debug([:error, err_socks])
+    handle_readable(err_socks)
+  end
+
+  def handle_writable(writable)
+    return unless writable.is_a?(Array)
+
+    writable.each { |sock| @writable[sock]&.call }
+  end
+
+  def handle_readable(readable)
+    return unless readable.is_a?(Array)
+
+    readable.each { |sock| @readable[sock]&.call }
+  end
+
+  def handle_timeouts
+    current_time = Time.now
+    touts = @timeouts.keys
+    touts.each do |callback_proc|
+      # LOG.debug callback_proc
+      timeout = @timeouts[callback_proc]
+      next unless current_time >= timeout
+
+      @timeouts.delete(callback_proc)
+      callback_proc.call
     end
   end
 end
 
-class ClientConnection < EM::Connection
-  def initialize(hass_address, token)
-    @hass_address = hass_address
-    @token = token
+class SelectController
+  MAX_SOCKS = 50
+  @instance = nil
+  class << self
+    def instance
+      @instance ||= new
+    end
 
-    LOG.info([:client_connected, get_peername])
+    def run
+      instance.run
+    end
+  end
+  private_class_method :new
 
-    # Create the Hass instance associated with this client
-    @hass_instance = Hass.new(@hass_address, @token, self)
+  include SelectHandlerMethods
+
+  def initialize
+    reset
   end
 
-  def post_init
-    send_data("welcome\n")
+  def readable?(sock)
+    @readable[sock]
   end
 
-  def receive_data(data)
-    data.chomp!
-    LOG.debug([:from_savant, data])
-    @hass_instance.from_savant(data)
+  def writable?(sock)
+    @writable[sock]
   end
 
-  def unbind
-    LOG.debug([:savant_disconnected])
+  def add_sock(call_proc, sock, for_write: false)
+    raise "IO type required for socket argument: #{sock.class}" unless sock.is_a?(IO)
+    raise "invalid proc detected: #{call_proc.class}" unless call_proc.respond_to?(:call)
+
+    for_write ? @writable[sock] = call_proc : @readable[sock] = call_proc
   end
 
-  # Method to send data to the client
-  def puts(data)
-    send_data("#{data}\n")
+  def remove_sock(sock, for_write: false)
+    # LOG.debug(["removing_#{for_write ? 'write' : 'read'}_socket", sock, sock.object_id])
+    for_write ? @writable.delete(sock) : @readable.delete(sock)
+  end
+
+  def remove_readables(socks)
+    socks.each { |sock| remove_sock(sock) }
+    @writable.each_key { |sock| remove_sock(sock, for_write: true) }
+  end
+
+  def stop
+    remove_readables(@readable.keys)
+  end
+
+  def timeout?(callback_proc)
+    @timeouts[callback_proc]
+  end
+
+  def add_timeout(callback_proc, seconds)
+    # LOG.debug callback_proc
+    raise 'positive value required for seconds parameter' unless seconds.positive?
+    raise "invalid proc detected: #{callback_proc.class}" unless callback_proc.respond_to?(:call)
+
+    @timeouts[callback_proc] = Time.now + seconds
+  end
+
+  def remove_timeout(callback_proc)
+    @timeouts.delete(callback_proc)
+  end
+
+  def reset
+    @readable = {}
+    @writable = {}
+    @timeouts = {}
+    at_exit do
+      stop
+    end
+  end
+
+  def run
+    loop { select_socks }
+    # $stdout.puts([Time.now, 'ok', Process.pid])
+  rescue StandardError => e
+    LOG.error([:uncaught_exception_while_select, e])
+    LOG.error("Backtrace:\n\t#{e.backtrace.join("\n\t")}")
+    exit
+  end
+
+  private
+
+  def readables
+    @readable.delete_if { |socket, _| socket.closed? }
+    @readable.keys
+  end
+
+  def writeables
+    @writable.delete_if { |socket, _| socket.closed? }
+    @writable.keys
+  end
+
+
+  def run_select
+    rd = readables
+    # LOG.debug([:selecting, rd])
+    raise "socks limit #{MAX_SOCKS} exceeded in select loop." if rd.length > MAX_SOCKS
+
+    select(rd, writeables, rd, calculate_next_timeout)
+  rescue IOError => e
+    LOG.error([:io_error_in_select, e])
+  end
+
+  def select_socks
+    # LOG.debug @readable
+    readable, writable, err = run_select
+    # LOG.debug readable
+    return handle_err(err) if err && !err.empty?
+
+    handle_timeouts
+    handle_writable(writable) if writable
+    handle_readable(readable) if readable
+  end
+
+  def calculate_next_timeout
+    tnow = Time.now
+    return nil if @timeouts.empty?
+
+    [@timeouts.values.min, tnow].max - tnow
   end
 end
 
-EM.run do
-  # Start the TCP server within the reactor
-  EM.start_server('0.0.0.0', TCP_PORT, ClientConnection, WS_URL, WS_TOKEN)
-  LOG.info([:server_started, TCP_PORT])
+# SelectController.instance.setup
+
+module NonBlockSocket; end
+module NonBlockSocket::TCP; end
+module NonBlockSocket::TCP::SocketExtensions; end
+
+module NonBlockSocket::TCP::SocketExtensions::SocketIO
+  CHUNK_LENGTH = 1024 * 16
+
+  def write(data)
+    return unless data
+
+    @output_table ||= []
+    @output_table << data
+    return if @wait_io
+
+    add_writable(method(:write_message), to_io)
+    # LOG.debug([:added_to_write_queue, data])
+  end
+
+  private
+
+  def read_chunk
+    # LOG.debug(['reading'])
+    dat = to_sock.read_nonblock(CHUNK_LENGTH)
+    # LOG.debug(['read', dat])
+    raise(EOFError, 'Nil return on readable') unless dat
+
+    handle_data(dat)
+  rescue EOFError, Errno::EPIPE, Errno::ECONNREFUSED, Errno::ECONNRESET => e
+    LOG.debug([:read_chunk_error, :read, dat.to_s.length, e])
+    on_disconnect(dat)
+    on_error(e, e.backtrace)
+  rescue IO::WaitReadable
+    # IO not ready yet
+  end
+
+  def write_chunk
+    # LOG.debug(['writing', @write_buffer])
+    written = to_sock.write_nonblock(@write_buffer)
+    # LOG.debug(['wrote', written])
+    @write_buffer = @write_buffer[written..] || ''.dup
+  rescue EOFError, Errno::EPIPE, Errno::ECONNREFUSED, Errno::ECONNRESET => e
+    on_error(e, e.backtrace)
+    on_disconnect
+  rescue IO::WaitWritable
+    # IO not ready yet
+  end
+
+  def write_message
+    return next_write unless @write_buffer.empty?
+    return if @output_table.empty?
+
+    @write_buffer << @output_table.shift
+    @current_output = @write_buffer
+    write_chunk
+    next_write
+  end
+
+  def next_write
+    on_wrote(@current_output) if @write_buffer.empty?
+    return unless @output_table.empty?
+
+    on_empty
+    remove_writable(to_io)
+    close if @close_after_write
+  end
 end
+
+module NonBlockSocket::TCP::SocketExtensions::Events
+  def trigger_event(event_name, *args)
+    # LOG.debug([:event, event_name, args, self])
+    handler = @handlers[event_name]
+    handler&.call(*args)
+  end
+
+  def on_empty
+    trigger_event(:empty)
+  end
+
+  def on_error(error, backtrace)
+    LOG.error([error, backtrace])
+    @error_status = [error, backtrace]
+    trigger_event(:error, @error_status, self)
+  end
+
+  def on_connect
+    LOG.debug([:io_connected, self])
+    @disconnected = false
+    add_readable(method(:read_chunk), to_io)
+    next_write
+    trigger_event(:connect, self)
+  end
+
+  def on_disconnect(dat = nil)
+    @disconnected = true
+    on_data(dat) if dat
+    remove_readable(to_io)
+    remove_writable(to_io)
+    close unless closed?
+    trigger_event(:disconnect, self)
+  end
+
+  def on_data(data)
+    trigger_event(:data, data, self)
+  end
+
+  def on_message(message)
+    trigger_event(:message, message, self)
+  end
+
+  def on_wrote(message)
+    return unless message
+
+    @current_output&.clear
+    trigger_event(:wrote, message, self)
+  end
+end
+
+module NonBlockSocket::TCP::SocketExtensions
+  include Events
+  include SocketIO
+  include SocketInterface
+  include TimeoutInterface
+
+  DEFAULT_BUFFER_LIMIT = 1024 * 16
+  DEFAULT_BUFFER_TIMEOUT = 2
+
+  attr_accessor :handlers, :read_buffer_timeout, :max_buffer_size
+
+  def connected
+    setup_buffers
+    @handlers ||= {}
+    on_connect
+  end
+
+  def add_handlers(handlers)
+    handlers.each { |event, proc| on(event, proc) }
+  end
+
+  def on(event, proc = nil, &block)
+    @handlers ||= {}
+    @handlers[event] = proc || block
+  end
+
+  def to_io
+    @socket
+  end
+
+  def to_sock
+    @socket
+  end
+
+  def closed?
+    to_sock ? to_sock.closed? : true
+  end
+
+  def close
+    return if closed?
+
+    to_sock.close
+    on_disconnect unless @disconnected
+  end
+
+  private
+
+  def setup_buffers
+    @input_buffer ||= ''.dup
+    @output_table ||= []
+    @write_buffer ||= ''.dup
+    @read_buffer_timeout ||= DEFAULT_BUFFER_TIMEOUT
+    @max_buffer_size ||= DEFAULT_BUFFER_LIMIT
+  end
+
+  def handle_data(data)
+    add_timeout(method(:handle_read_timeout), @read_buffer_timeout)
+    LOG.debug([:handle_socket_data, object_id, data[0..10]])
+    on_data(data)
+    handle_message(data)
+  end
+
+  def handle_message(data)
+    return unless (on_msg = @handlers[:message])
+    return unless (pattern = on_msg.pattern)
+
+    @input_buffer << data
+    handle_buffer_overrun
+    while (line = @input_buffer.slice!(pattern))
+      on_message(line)
+    end
+  end
+
+  class BufferOverrunError < StandardError; end
+
+  def handle_buffer_overrun
+    return unless @input_buffer.size > @max_buffer_size
+
+    close
+    raise BufferOverrunError, "Read buffer size exceeded for client: #{self}"
+  end
+
+  def handle_read_timeout
+    return if @input_buffer.empty?
+
+    LOG.info(["Read timeout reached for client: #{self}, clearing data from buffer: ", @input_buffer])
+    @input_buffer = ''.dup
+  end
+end
+
+class NonBlockSocket::TCP::Wrapper
+  include NonBlockSocket::TCP::SocketExtensions
+
+  attr_accessor :wait_io
+
+  def initialize(socket)
+    @socket = socket
+    setup_buffers
+  end
+end
+
+class NonBlockSocket::TCP::WebSocketClient
+  include NonBlockSocket::TCP::SocketExtensions
+
+  attr_reader :driver, :url
+
+  def initialize(url, handlers: {})
+    @url = url
+    @uri = URI.parse(url)
+    @host = @uri.host
+    @port = @uri.port || 80
+    @socket = nil
+    @handlers = {}
+    setup_buffers
+    @driver = WebSocket::Driver.client(self)
+
+    add_handlers(handlers)
+    setup_websocket_handlers
+    connect_nonblock
+  end
+
+  # Send a message via the WebSocket
+  def send(data)
+    @driver.text(data)
+  end
+
+  # Write data to the socket (called by the driver)
+  def write(data)
+    # LOG.debug([:sending_data, data])
+    super(data)  # Ensure data is sent to the socket
+  end
+
+  def to_io
+    @socket
+  end
+
+  private
+
+  def connect_nonblock
+    @socket = Socket.new(Socket::AF_INET, Socket::SOCK_STREAM, 0)
+    @socket.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true)
+    @socket.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
+    @socket.connect_nonblock(Socket.sockaddr_in(@port, @host), exception: false)
+    readable?
+  rescue => e
+    on_error(e, e.backtrace)
+    on_disconnect
+  end
+
+  def readable?
+    to_io.read_nonblock(1)
+    setup_io
+  rescue IO::WaitWritable, IO::WaitReadable
+    setup_io
+  rescue Errno::ECONNREFUSED => e
+    on_error(e, e.backtrace)
+    on_disconnect
+  end
+
+  def setup_io
+    remove_readable(to_io)
+    @wait_io = false
+    @driver.start  # Initiates the WebSocket handshake
+    LOG.debug([:ws_driver_started])
+    @handlers[:empty] = proc { add_readable(method(:read_chunk), to_io) }
+    # connected
+  end
+
+  def setup_websocket_handlers
+    @driver.on(:open)    { connected }
+    @driver.on(:message) { |e| on_message(e.data) }
+    @driver.on(:close)   { on_disconnect }
+    @driver.on(:error)   { |e| on_error(e.message, e.backtrace) }
+  end
+
+  # Override handle_data to pass data to the driver
+  def handle_data(data)
+    # LOG.debug([:handle_ws_data, data])
+    @driver.parse(data)
+  end
+
+  def connected
+    super
+    LOG.debug(['WebSocket connected', @host, @port])
+  end
+end
+
+class NonBlockSocket::TCP::Server
+  include SocketInterface
+  include TimeoutInterface
+  include Fcntl
+
+  attr_reader :port
+
+  CHUNK_LENGTH = 2048
+  TCP_SERVER_FIRST_RETRY_SECONDS = 1
+  TCP_SERVER_RETRY_LIMIT_SECONDS = 60
+  TCP_SERVER_RETRY_MULTIPLIER = 2
+
+  def initialize(**kwargs)
+    @addr = kwargs[:host] || '0.0.0.0'
+    @port = kwargs[:port] || 0
+    @setup_proc = method(:setup_server)
+    @handlers = kwargs[:handlers] || {}
+    setup_server
+  end
+
+  def add_handlers(handlers)
+    handlers.each { |event, proc| on(event, proc) }
+  end
+
+  def on(event, proc = nil, &block)
+    @handlers[event] = proc || block
+  end
+
+  def setup_server
+    @server ||= TCPServer.new(@addr, @port)
+    @port = @server.addr[1]
+    LOG.debug([self, @port])
+    add_readable(method(:handle_accept), @server)
+    LOG.info("Server setup complete, listening on port #{@port}")
+  rescue Errno::EADDRINUSE
+    port_in_use
+  end
+
+  def handle_accept
+    LOG.info([:accepting_non_block_client, @port])
+    client = @server.accept_nonblock
+    setup_client(client)
+  rescue IO::WaitReadable, IO::WaitWritable
+    # If the socket isn't ready, ignore for now
+  end
+
+  def setup_client(client)
+    client.fcntl(Fcntl::F_SETFL, Fcntl::O_NONBLOCK)
+    client = NonBlockSocket::TCP::Wrapper.new(client)
+    @handlers.each { |k, v| client.on(k, v) }
+    client.connected
+  end
+
+  def close
+    @server.close
+  end
+
+  def available?
+    !(@server.nil? || @server.closed?)
+  end
+
+  private
+
+  def port_in_use
+    LOG.error("TCP server could not start on Port #{@port} already in use")
+    @server_setup_retry_seconds ||= TCP_SERVER_FIRST_RETRY_SECONDS
+    exit if @server_setup_retry_seconds > TCP_SERVER_RETRY_LIMIT_SECONDS
+    add_timeout(@setup_proc, @server_setup_retry_seconds * TCP_SERVER_RETRY_MULTIPLIER) unless timeout?(@setup_proc)
+  end
+end
+
+
+def tcp_client_connected(client)
+  hass = Hass.new(WS_URL, WS_TOKEN, client)
+end
+
+TCP_SERVER = NonBlockSocket::TCP::Server.new(
+  port: TCP_PORT,
+  handlers:{
+    connect: (method(:tcp_client_connected))
+  }
+)
+
+SelectController.run
