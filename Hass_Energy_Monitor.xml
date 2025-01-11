@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="racepoint_component_profile.xsd"
     manufacturer="Hass" model="Energy_Monitor" alias="Hass Energy monitoring" device_class="Energy_Resource_monitor"
-        minimum_component_engine_version="10.2" rpm_xml_version="1.10">
+        minimum_component_engine_version="10.2" rpm_xml_version="1.11">
     
     <notes>
       - Ver 1.10 First working version with the help of Benumc. Fl0zan0
@@ -31,7 +31,6 @@
     <state_variable_list>
         <state_variable name="subscribe_all_events" owning_logical_component="Monitor" state_center_type="string" user_editable="yes">NO</state_variable>
         <state_variable name="state_filter" owning_logical_component="Monitor" state_center_type="string" state_center_binding="state_filter" user_editable="yes">state</state_variable>
-        <state_variable name="HassEntityArray" owning_logical_component="Monitor" state_center_type="string" state_center_binding="HassEntityArray"></state_variable>
         <state_variable name="HassEntityId" owning_logical_component="Monitor" state_center_type="string" state_center_binding="HassEntityId" user_editable="yes">HassEntityId - without power</state_variable>
         <state_variable name="CurrentEnergyModeName" state_center_binding="CurrentEnergyModeName" owning_logical_component="Monitor" state_center_type="string"></state_variable>
         <state_variable name="CurrentEnergyMode" state_center_binding="CurrentEnergyMode" owning_logical_component="Monitor" state_center_type="integer"></state_variable>
@@ -110,15 +109,9 @@
         </resource_component_actions>
         
         <custom_component_actions>
-            
-            <action name="TrackHassEntity">
-                <update_state_variable name="HassEntityArray" update_type="append" update_source="state_variable">HassEntityId</update_state_variable>
-                <update_state_variable name="HassEntityArray" update_type="append" update_source="constant">,</update_state_variable>
-                <execute_on_schedule period_ms="0"/>
-            </action>
+
 
             <action name="AwaitConnection">
-              <update_state_variable name="HassEntityArray" update_type="set" update_source="constant"></update_state_variable>
               <execute_on_schedule period_ms="0"/>
               <execute_action_after_delay ms_delay="11000" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
               <execute_action_after_delay ms_delay="11000" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
@@ -147,7 +140,7 @@
                 <command response_required="no">
                   <parameter_list>
                     <parameter parameter_data_type="character">subscribe_entity,</parameter>
-                    <parameter parameter_data_type="character" state_variable="HassEntityArray"></parameter>
+                    <parameter parameter_data_type="character" state_variable="HassEntityId"></parameter>
                   </parameter_list>
                   <delay ms_delay="50"/>
                 </command>
