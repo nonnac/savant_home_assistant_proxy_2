@@ -1,6 +1,7 @@
 WS_TOKEN = ENV['SUPERVISOR_TOKEN']
 WS_URL = "ws://supervisor/core/api/websocket"
 TCP_PORT = 8080
+
 require 'socket'
 require 'json'
 require 'fcntl'
@@ -9,14 +10,9 @@ require 'websocket/driver'
 require 'fileutils'
 
 class AppLogger
-  def self.setup(file_name, log_path: "#{Dir.home}/logfiles", log_level: Logger::WARN)
-    script_name = File.basename(file_name, '.*')
-    log_path = "#{log_path}/#{script_name}/"
-    FileUtils.mkdir_p(log_path)
+  def self.setup(log_level: Logger::WARN)
 
-    log_filename = "#{log_path}#{script_name}_#{Time.now.strftime('%Y-%m-%d')}.log"
-
-    logger = Logger.new(STDOUT, 10, 1024 * 1024 * 10)
+    logger = Logger.new(STDOUT)
     logger.level = log_level
 
     # Extend logger to include a method for logging with caller details
@@ -26,18 +22,35 @@ class AppLogger
       error(error_message)
     end
 
+    logger.formatter = proc do |severity, datetime, _progname, msg|
+      "#{severity[0]}-#{datetime.strftime("%d %H:%M:%S.%L")}: #{msg}\n"
+    end
+
     logger
   end
 end
 
-LOG = AppLogger.setup(__FILE__, log_level: Logger::DEBUG) unless defined?(LOG)
-# LOG = Logger.new(STDOUT)
-LOG.formatter = proc do |severity, datetime, _progname, msg|
-  "#{severity[0]}-#{datetime.strftime("%d %H:%M:%S")}: #{msg}\n"
+LOG = AppLogger.setup(log_level: Logger::DEBUG) unless defined?(LOG)
+
+# Read configuration from /data/options.json
+options_file = '/data/options.json'
+unless File.exist?(options_file)
+  LOG.error("Configuration file #{options_file} not found")
+  exit 1
 end
-LOG.level = Logger::DEBUG
 
+begin
+  options_content = File.read(options_file)
+  options = JSON.parse(options_content, symbolize_names: true)
+  LOG.debug("Configuration loaded from #{options_file} #{options}")
+rescue JSON::ParserError => e
+  LOG.error("Failed to parse configuration file: #{e.message}")
+  exit 1
+end
 
+GENERIC_ACTION_ACCESS = options[:enable_generic_call_service]
+WHITELIST = (options[:client_ip_whitelist] || '').split(',')
+ENABLE_TLS = options[:use_tls]
 
 module TimeoutInterface
   def add_timeout(callback_proc, duration)
@@ -88,93 +101,151 @@ end
 module HassMessageParsingMethods
   def new_data(js_data)
     return {} unless js_data['data']
-
     js_data['data']['new_state'] || js_data['data']
   end
 
   def parse_event(js_data)
-    return entities_changed(js_data['c']) if js_data.keys == ['c']
-    return entities_changed(js_data['a']) if js_data.keys == ['a']
-
-    case js_data['event_type']
-    when 'state_changed' then parse_state(new_data(js_data))
-    when 'call_service' then parse_service(new_data(js_data))
+    case js_data.keys
+    when ['c'] then entities_changed(js_data['c'])
+    when ['a'] then entities_changed(js_data['a'])
     else
-      [:unknown, js_data['event_type']]
+      event_type = js_data['event_type']
+      return [:unknown, event_type] unless event_type
+
+      case event_type
+      when 'state_changed' then parse_state(new_data(js_data))
+      when 'call_service'  then parse_service(new_data(js_data))
+      else
+        [:unknown, event_type]
+      end
     end
   end
 
-  def entities_changed(entities)
+  def entities_changed(entities, parents = [])
     entities.each do |entity, state|
+      # If data is nested under '+', use that instead
       state = state['+'] if state.key?('+')
+
       LOG.debug([:changed, entity, state])
+
       attributes = state['a']
-      value = state['s']
-      update?("#{entity}_state", 'state', value) if value
-      update_with_hash(entity, attributes) if attributes
+      value      = state['s']
+
+      update_hass_data(entity, parents, 'state', value) if value
+      update_with_hash(entity, attributes, parents)     if attributes
     end
   end
 
   def parse_service(data)
-    return [] unless data['service_data'] && data['service_data']['entity_id']
+    sd = data['service_data']
+    return [] unless sd && sd['entity_id']
 
-    [data['service_data']['entity_id']].flatten.compact.map do |entity|
+    Array(sd['entity_id']).map do |entity|
       "type:call_service,entity:#{entity},service:#{data['service']},domain:#{data['domain']}"
     end
   end
 
   def included_with_filter?(primary_key)
     return true if @filter.empty? || @filter == ['all']
-
     @filter.include?(primary_key)
   end
 
-  def parse_state(message)
+  def parse_state(message, parents = [])
     eid = message['entity_id']
+    return unless eid
 
-    update?("#{eid}_state", 'state', message['state']) if eid
+    # Possible ID substitution
+    eid = @substitute_id.key(eid) || eid
+
+    # Record its top-level state
+    update_hass_data(eid, parents, 'state', message['state'])
 
     atr = message['attributes']
+    return unless atr
+
     case atr
-    when Hash then update_with_hash(eid, atr)
-    when Array then update_with_array(eid, atr)
+    when Hash
+      update_with_hash(eid, atr, parents + ['attributes'])
+    when Array
+      update_with_array(eid, atr, parents + ['attributes'])
     end
   end
 
-  def update?(key, primary_key, value)
-    return unless value && included_with_filter?(primary_key)
+  #
+  # Build data up in a hash, including the chain of parents,
+  # and only join it all together in `update?`.
+  #
+  def update_hass_data(entity_id, parents, attr_name, value)
+    return unless value && included_with_filter?(attr_name)
 
-    value = 3 if primary_key == 'brightness' && [1, 2].include?(value)
+    # Hack for brightness
+    value = 3 if attr_name == 'brightness' && [1, 2].include?(value)
 
-    to_savant("#{key}===#{value}")
+    data_hash = {
+      entity_id:  entity_id,
+      parent_keys: parents,
+      attr_name:  attr_name,
+      attr_value: value
+    }
+
+    update?(data_hash)
   end
 
-  def update_hashed_array(parent_key, msg_array)
-    msg_array.each_with_index do |e, i|
-      key = "#{parent_key}_#{i}"
-      case e
-      when Hash then update_with_hash(key, e)
-      when Array then update_with_array(key, e)
-      else
-        update?(key, i, e)
-      end
-    end
+  def update?(data_hash)
+    # Convert parent_keys array to a comma-separated string
+    joined_parents = data_hash[:parent_keys].join('_')
+
+    # Construct final string
+    output = [
+      "entity_id=#{data_hash[:entity_id]}",
+      "substitute_id=#{@id_substitute[data_hash[:entity_id]]}",
+      "parent_keys=#{joined_parents}",
+      "attr_name=#{data_hash[:attr_name]}",
+      "attr_value=#{data_hash[:attr_value]}"
+    ].join('&')
+
+    to_savant(output)
   end
 
-  def update_with_array(parent_key, msg_array)
-    return update_hashed_array(parent_key, msg_array) if msg_array.first.is_a?(Hash)
-
-    update?(parent_key, parent_key, msg_array.join(','))
-  end
-
-  def update_with_hash(parent_key, msg_hash)
+  def update_with_hash(parent_key, msg_hash, parents = [])
     arr = msg_hash.map do |k, v|
-      update?("#{parent_key}_#{k}", k, v) if included_with_filter?(k)
+      # We add this key to the parents chain for deeper nesting
+      update_hass_data(parent_key, parents + [k], k, v) if included_with_filter?(k)
       "#{k}:#{v}"
     end
+
     return unless included_with_filter?('attributes')
 
-    update?("#{parent_key}_attributes", parent_key, arr.join(','))
+    # Also store a merged attributes string
+    merged_attrs = arr.join(',')
+    update_hass_data(
+      parent_key, 
+      parents + ['attributes'],
+      parent_key,
+      merged_attrs
+    )
+  end
+
+  def update_with_array(parent_key, msg_array, parents = [])
+    # If first element is a Hash, we treat it differently
+    return update_hashed_array(parent_key, msg_array, parents) if msg_array.first.is_a?(Hash)
+    update_hass_data(parent_key, parents, parent_key, msg_array.join(','))
+  end
+
+  def update_hashed_array(parent_key, msg_array, parents = [])
+    msg_array.each_with_index do |e, i|
+      new_key    = "#{parent_key}_#{i}"
+      next_parents = parents + [i.to_s]  # track index as part of the chain
+
+      case e
+      when Hash
+        update_with_hash(new_key, e, next_parents)
+      when Array
+        update_with_array(new_key, e, next_parents)
+      else
+        update_hass_data(new_key, next_parents, i, e)
+      end
+    end
   end
 
   def parse_result(js_data)
@@ -193,6 +264,45 @@ module HassMessageParsingMethods
 end
 
 module HassRequests
+  def call_service(domain, service, entity_id: nil, **service_data)
+    unless GENERIC_ACTION_ACCESS
+      LOG.error("Generic action access is disabled")
+      return
+    end
+    payload = {
+      type: :call_service,
+      domain: domain,
+      service: service,
+      target: { entity_id: entity_id },
+      service_data: service_data
+    }.compact
+    send_data(payload)
+  end
+
+  def alarm_arm_away(entity_id, code = nil)
+    send_data(
+      type: :call_service, domain: :alarm_control_panel, service: :alarm_arm_away,
+      target: { entity_id: entity_id },
+      service_data: { code: code }
+    )
+  end
+
+  def alarm_arm_home(entity_id, code = nil)
+    send_data(
+      type: :call_service, domain: :alarm_control_panel, service: :alarm_arm_home,
+      target: { entity_id: entity_id },
+      service_data: { code: code }
+    )
+  end
+
+  def alarm_disarm(entity_id, code = nil)
+    send_data(
+      type: :call_service, domain: :alarm_control_panel, service: :alarm_disarm,
+      target: { entity_id: entity_id },
+      service_data: { code: code }
+    )
+  end
+  
   def fan_on(entity_id, speed)
     send_data(
       type: :call_service, domain: :fan, service: :turn_on,
@@ -393,6 +503,11 @@ class Hass
     @filter = filter
     @client = client
     @client.wait_io = true
+    @ws_connected = false
+    @auth_required = true
+    @substitute_id = {}
+    @id_substitute = {}
+    @authed_queue = []
     @id = 0
     connect_websocket
     @client.on(:data, method(:from_savant))
@@ -419,7 +534,8 @@ class Hass
       if cmd == 'subscribe_events' then send_json(type: 'subscribe_events')
       elsif cmd == 'subscribe_entity' then subscribe_entities(params)
       elsif cmd == 'state_filter' then @filter = params
-      elsif hass_request?(cmd) then send(cmd, *params)
+      elsif cmd == 'substitute_ids' then substitute_ids(params)
+      elsif hass_request?(cmd) then send_hass_request(cmd, *params)
       else LOG.error([:unknown_cmd, cmd, req])
       end
     end
@@ -433,7 +549,22 @@ class Hass
 
   private
 
+  def substitute_ids(params)
+    params.each_slice(2) do |k,v|
+      @substitute_id[k] = v
+      @id_substitute[v] = k
+    end
+    LOG.debug([:substitute_id, @substitute_id])
+    subscribe_entities(@substitute_id.values)
+  end
+
+  def send_hass_request(cmd, *params)
+    params[0] = @substitute_id[params.first] || params.first
+    send(cmd, *params)
+  end
+
   def connect_websocket
+    @reconnecting = false
     ws_url = @address
     @hass_ws = NonBlockSocket::TCP::WebSocketClient.new(ws_url)
   
@@ -443,42 +574,56 @@ class Hass
     end
   
     @hass_ws.on :message do |event|
+      data_received
       handle_message(event)
     end
   
     @hass_ws.on :close do |event|
+      @ws_connected = false
       LOG.debug([:ws_disconnected, event.code, event.reason])
       stop_ping_timer
       reconnect_websocket
     end
   
     @hass_ws.on :error do |event|
+      @ws_connected = false
       LOG.error([:ws_error, event])
       @hass_ws = nil
+      stop_ping_timer
       reconnect_websocket
     end
   end
 
   def start_ping_timer
+    @ws_connected = true
+    LOG.debug([:sending_ping])
     send_json(type: 'ping')
+    add_timeout(method(:data_received_timeout), 2)
+  end
+
+  def data_received
+    @ws_connected = true
+    remove_timeout(method(:data_received_timeout))
     add_timeout(method(:start_ping_timer), 30)
+  end
+
+  def data_received_timeout
+    LOG.error([:data_received_timeout, :reconnecting])
+    @ws_connected = false
+    reconnect_websocket
   end
   
   def stop_ping_timer
+    LOG.debug([:ping_time_stopped])
     remove_timeout(method(:start_ping_timer))
   end
 
   def reconnect_websocket
     return if @reconnecting
+
     @reconnecting = true
     LOG.info([:reconnecting_websocket])
-    add_timeout(
-      proc {
-        @reconnecting = false
-        connect_websocket
-      },
-      5
-    )
+    add_timeout(method(:connect_websocket), 5)
   end
 
   def hass_request?(cmd)
@@ -491,7 +636,8 @@ class Hass
     return unless (message = JSON.parse(data))
     return LOG.error([:request_failed, message]) if message['success'] == false
 
-    LOG.debug([:handling, message])
+    LOG.debug([:handling, @hass_ws.object_id, message])
+    start_ping_timer unless @ws_connected
     handle_hash(message)
   end
 
@@ -500,23 +646,40 @@ class Hass
     when 'auth_required' then send_auth
     when 'event' then parse_event(message['event'])
     when 'result' then parse_result(message)
-    when 'pong' then LOG.debug([:pong_received])
-    when 'auth_ok' then @client.wait_io = false
+    when 'auth_ok' then auth_ok
+    when 'pong' then to_savant("#{message['id']},pong,#{Time.now}")
     end
   end
 
   def send_auth
+    @auth_required = true
     auth_message = { type: 'auth', access_token: @token }.to_json
     LOG.debug([:sending_auth])
     @hass_ws.send(auth_message)
   end
 
   def send_json(hash)
+    return push_to_queue(hash) if @auth_required
+
     @id += 1
     hash['id'] = @id
     hash = hash.to_json
-    LOG.debug([:send, hash])
+    LOG.debug([:send, @hass_ws.object_id, hash])
     @hass_ws.send(hash)
+  end
+
+  def push_to_queue(hash)
+    @authed_queue ||= []
+    @authed_queue << hash
+    LOG.debug([:waiting_to_send, @authed_queue])
+  end
+
+  def auth_ok
+    @client.wait_io = false
+    @auth_required = false
+    @authed_queue.each { |h| send_json(h) }
+    @authed_queue = []
+    LOG.info([:authorization_complete])
   end
 
   def to_savant(*message)
@@ -747,7 +910,7 @@ class SelectController
 
   def calculate_next_timeout
     tnow = Time.now
-    return nil if @timeouts.empty?
+    return 30 if @timeouts.empty?
 
     [@timeouts.values.min, tnow].max - tnow
   end
@@ -971,6 +1134,10 @@ class NonBlockSocket::TCP::Wrapper
     @socket = socket
     setup_buffers
   end
+
+  def peeraddr
+    @socket.peeraddr
+  end
 end
 
 class NonBlockSocket::TCP::WebSocketClient
@@ -1131,9 +1298,21 @@ class NonBlockSocket::TCP::Server
 end
 
 
+# def tcp_client_connected(client)
+#   hass = Hass.new(WS_URL, WS_TOKEN, client)
+# end
+
 def tcp_client_connected(client)
-  hass = Hass.new(WS_URL, WS_TOKEN, client)
+  client_ip = client.peeraddr[3]
+  unless WHITELIST.include?(client_ip) || WHITELIST.empty?
+    LOG.error("Access denied for client: #{client_ip}")
+    client.close
+    return
+  end
+  LOG.info("Access granted for client: #{client_ip}")
+  Hass.new(WS_URL, WS_TOKEN, client)
 end
+
 
 TCP_SERVER = NonBlockSocket::TCP::Server.new(
   port: TCP_PORT,
