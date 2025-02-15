@@ -263,22 +263,7 @@ module HassMessageParsingMethods
   end
 end
 
-module HassRequests
-  def call_service(domain, service, entity_id: nil, **service_data)
-    unless GENERIC_ACTION_ACCESS
-      LOG.error("Generic action access is disabled")
-      return
-    end
-    payload = {
-      type: :call_service,
-      domain: domain,
-      service: service,
-      target: { entity_id: entity_id },
-      service_data: service_data
-    }.compact
-    send_data(payload)
-  end
-
+module HassAlarmRequests
   def alarm_arm_away(entity_id, code = nil)
     send_data(
       type: :call_service, domain: :alarm_control_panel, service: :alarm_arm_away,
@@ -301,6 +286,23 @@ module HassRequests
       target: { entity_id: entity_id },
       service_data: { code: code }
     )
+  end
+end
+
+module HassRequests
+  def call_service(domain, service, entity_id: nil, **service_data)
+    unless GENERIC_ACTION_ACCESS
+      LOG.error("Generic action access is disabled")
+      return
+    end
+    payload = {
+      type: :call_service,
+      domain: domain,
+      service: service,
+      target: { entity_id: entity_id },
+      service_data: service_data
+    }.compact
+    send_data(payload)
   end
   
   def fan_on(entity_id, speed)
@@ -515,11 +517,12 @@ class Hass
   end
 
   def subscribe_entities(*entity_id)
-    return if entity_id.empty?
+    entity_array = entity_id.flatten
+    return if entity_array.empty?
 
     send_json(
       type: 'subscribe_entities',
-      entity_ids: entity_id.flatten
+      entity_ids: entity_array
     )
   end
 
