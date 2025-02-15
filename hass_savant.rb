@@ -491,6 +491,7 @@ end
 
 class Hass
   include TimeoutInterface
+  include SocketInterface
   include HassMessageParsingMethods
   include HassRequests
 
@@ -555,7 +556,6 @@ class Hass
       @id_substitute[v] = k
     end
     LOG.debug([:substitute_id, @substitute_id])
-    subscribe_entities(@substitute_id.values)
   end
 
   def send_hass_request(cmd, *params)
@@ -579,19 +579,29 @@ class Hass
     end
   
     @hass_ws.on :close do |event|
-      @ws_connected = false
       LOG.debug([:ws_disconnected, event.code, event.reason])
-      stop_ping_timer
       reconnect_websocket
     end
   
     @hass_ws.on :error do |event|
-      @ws_connected = false
       LOG.error([:ws_error, event])
-      @hass_ws = nil
-      stop_ping_timer
       reconnect_websocket
     end
+  end
+
+  def cleanup_sockets
+    LOG.error([:cleaning_up_sockets, @hass_ws, @client])
+    remove_writable(@hass_ws) if @hass_ws
+    remove_writable(@client) if @client
+    remove_readable(@hass_ws) if @hass_ws
+    remove_readable(@client) if @client
+    @ws_connected = false
+    stop_ping_timer
+    @client rescue nil
+    @hass_ws rescue nil
+    @hass_ws = nil
+    @client = nil
+    LOG.error([:sockets_closed, :cleanup_complete])
   end
 
   def start_ping_timer
@@ -602,12 +612,16 @@ class Hass
   end
 
   def data_received
+    # return unless @ws
+
     @ws_connected = true
     remove_timeout(method(:data_received_timeout))
     add_timeout(method(:start_ping_timer), 30)
   end
 
   def data_received_timeout
+    # return unless @ws
+
     LOG.error([:data_received_timeout, :reconnecting])
     @ws_connected = false
     reconnect_websocket
@@ -621,6 +635,8 @@ class Hass
   def reconnect_websocket
     return if @reconnecting
 
+    remove_readable(@hass_ws)
+    remove_writable(@hass_ws)
     @reconnecting = true
     LOG.info([:reconnecting_websocket])
     add_timeout(method(:connect_websocket), 5)
@@ -659,6 +675,7 @@ class Hass
   end
 
   def send_json(hash)
+    # return unless @ws
     return push_to_queue(hash) if @auth_required
 
     @id += 1
@@ -680,12 +697,19 @@ class Hass
     @authed_queue.each { |h| send_json(h) }
     @authed_queue = []
     LOG.info([:authorization_complete])
+    add_timeout(proc { to_savant("hass_websocket_connected,#{Time.now}") } , 5)
   end
 
   def to_savant(*message)
     return unless message
 
-    @client.write(map_message(message).join)
+    return cleanup_sockets unless @client
+    peer = @client.peeraddr
+    LOG.debug([:to_savant, peer[1,2], @hass_ws.object_id])
+    ret = @client.write(map_message(message).join)
+  rescue IOError => e
+    LOG.error([:savant_io_error])
+    cleanup_sockets
   end
 
   def map_message(message)

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<component xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="racepoint_component_profile.xsd" manufacturer="Hass" model="Savant" alias="Home Assistant" device_class="Lighting_controller" minimum_component_engine_version="0" rpm_xml_version="4.0">
+<component xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="racepoint_component_profile.xsd" manufacturer="Hass" model="Savant" alias="Home Assistant"
+  device_class="Lighting_controller" minimum_component_engine_version="0" rpm_xml_version="3.8">
 
   <notes>
-    4.0 : Adding Buttons to the lighting control part, changed switch loads to the switch domain
-  </notes>
+  </notes>  
   <control_interfaces preferred="ip">
-    <ip port="8080" response_time_length_ms="50" protocol="tcp-tls">
-      <send_postfix type="hex">0A</send_postfix>
-      <receive_end_condition test_condition="data" type="hex">0A</receive_end_condition>
+    <ip port="8080" response_time_length_ms="1000" protocol="tcp">
+        <send_postfix type="hex">0A</send_postfix>
+        <receive_end_condition test_condition="data" type="hex">0A</receive_end_condition>
     </ip>
   </control_interfaces>
   <media_interfaces>
@@ -25,12 +25,12 @@
       <resource resource_type="ENV_FANCONTROLLER_SOURCE"/>
       <resource resource_type="ENV_DOOR_LOCK_SOURCE"/>
       <resource resource_type="ENV_GARAGE_DOOR_SOURCE"/>
-      <resource resource_type="ENV_SHADECONTROLLER_SOURCE"/>
+      <resource resource_type="ENV_SHADECONTROLLER_SOURCE" />
     </internal>
   </media_interfaces>
   <state_variable_list>
     <state_variable name="subscribe_all_events" owning_logical_component="Home Assistant" state_center_type="string" user_editable="yes">NO</state_variable>
-    <state_variable name="state_filter" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="state_filter" user_editable="yes">brightness,state,cover,lock,current_position,switch</state_variable>
+    <state_variable name="state_filter" owning_logical_component="Home Assistant"  state_center_type="string" state_center_binding="state_filter" user_editable="yes">brightness,state,cover,lock,current_position</state_variable>
     <state_variable name="HassEntityArray" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="HassEntityArray"></state_variable>
 
     <state_variable name="FanSet_0" owning_logical_component="Home Assistant" state_center_type="string" user_editable="yes" note="Fan Speed Off">0</state_variable>
@@ -46,10 +46,46 @@
     </implementation>
 
     <status_messages>
-      <status_message name="ShadeLevel">
-        <data type="character" terminator="_current_position===" terminator_type="character">
-          <update state="EntityID" type="string" />
+
+      <status_message name="websocket_connected">
+        <constant type="character">hass_websocket_connected,</constant>
+        <data type="character" terminator_type="end_of_data">
+          <update state="ws_reconnected_at" type="string"></update>
         </data>
+        <run_elements>
+          <actions>
+            <action name="resubscribe">
+              <execute_action_after_delay ms_delay="100" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
+              <execute_action_after_delay ms_delay="200" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
+              <execute_action_after_delay ms_delay="300" action_name="SubscribeThermostatEntity" action_type="CUSTOM"></execute_action_after_delay>
+              <execute_action_after_delay ms_delay="400" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay>
+            </action>
+          </actions>
+        </run_elements>
+      </status_message>
+      <status_message name="pong">
+        <data type="character" terminator_type="character" terminator=",">
+          <update state="pong_id" type="string"></update>
+        </data>
+        <constant type="character">pong,</constant>
+        <data type="character" terminator_type="end_of_data">
+          <update state="last_pong_time" type="string"></update>
+        </data>
+      </status_message>
+      <status_message name="ShadeLevel">
+        <constant type="character">entity_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="EntityID" type="string"></update>
+        </data>
+        <constant type="character">substitute_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="SubstituteID" type="string"></update>
+        </data>
+        <constant type="character">parent_keys=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="ParentKeys" type="string"></update>
+        </data>
+        <constant type="character">attr_name=current_position&amp;attr_value=</constant>
         <data type="character" terminator_type="end_of_data">
           <update state="ShadeLevel" type="integer" />
         </data>
@@ -57,9 +93,19 @@
       </status_message>
 
       <status_message name="Brightness">
-        <data type="character" terminator="_brightness===" terminator_type="character">
-          <update state="EntityID" type="string" />
+        <constant type="character">entity_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="EntityID" type="string"></update>
         </data>
+        <constant type="character">substitute_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="SubstituteID" type="string"></update>
+        </data>
+        <constant type="character">parent_keys=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="ParentKeys" type="string"></update>
+        </data>
+        <constant type="character">attr_name=brightness&amp;attr_value=</constant>
         <data type="character" terminator_type="end_of_data">
           <update state="Value" type="integer" />
           <data_map match_required="no">
@@ -74,19 +120,27 @@
       </status_message>
 
       <status_message name="State">
-        <data type="character" terminator="_state===" terminator_type="character">
-          <update state="EntityID" type="string" />
+        <constant type="character">entity_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="EntityID" type="string"></update>
         </data>
+        <constant type="character">substitute_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="SubstituteID" type="string"></update>
+        </data>
+        <constant type="character">parent_keys=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="ParentKeys" type="string"></update>
+        </data>
+        <constant type="character">attr_name=state&amp;attr_value=</constant>
         <data type="character" terminator_type="end_of_data">
           <update state="CurrentState" type="string"/>
           <data_map match_required="no">
             <map key="closed">
               <update state="IsShadeOpen" type="boolean">false</update>
-              <update state="GarageDoorStatus" type="string">Closed</update>
             </map>
             <map key="open">
               <update state="IsShadeOpen" type="boolean">true</update>
-              <update state="GarageDoorStatus" type="string">Open</update>
             </map>
             <map key="locked">
               <update state="DoorLockStatus" type="string">Locked</update>
@@ -98,14 +152,14 @@
               <update state="IsDimmerOn" type="boolean">true</update>
               <update state="LightPowerStatus" type="string">ON</update>
               <update state="IsLightOn" type="boolean">true</update>
-              <update state="IsLedOn" type="boolean">true</update>
+              <update state="GarageDoorStatus" type="string">Open</update>
             </map>
             <map key="off">
               <update state="IsDimmerOn" type="boolean">false</update>
               <update state="LightPowerStatus" type="string">OFF</update>
               <update state="IsLightOn" type="boolean">false</update>
+              <update state="GarageDoorStatus" type="string">Closed</update>
               <update state="DimmerLevel" type="integer">0</update>
-              <update state="IsLedOn" type="boolean">false</update>
             </map>
           </data_map>
         </data>
@@ -113,21 +167,46 @@
       </status_message>
 
       <status_message name="Attributes">
-        <data type="character" terminator="_attributes===" terminator_type="character">
-          <update state="EntityID" type="string" />
+        <constant type="character">entity_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="EntityID" type="string"></update>
         </data>
+        <constant type="character">substitute_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="SubstituteID" type="string"></update>
+        </data>
+        <constant type="character">parent_keys=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="ParentKeys" type="string"></update>
+        </data>
+        <constant type="character">attr_name=attributes&amp;attr_value=</constant>
         <data type="character" terminator_type="end_of_data">
           <update state="CurrentAttributes" type="string"/>
         </data>
         <append_data_to_state_names state="EntityID" />
       </status_message>
       <status_message name="OtherUpdate">
-        <data type="character" terminator="===" terminator_type="character">
-          <update state="EntityID" type="string" />
+        <constant type="character">entity_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="EntityID" type="string"></update>
         </data>
+        <constant type="character">substitute_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="SubstituteID" type="string"></update>
+        </data>
+        <constant type="character">parent_keys=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="ParentKeys" type="string"></update>
+        </data>
+        <constant type="character">attr_name=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="Name" type="string" />
+        </data>
+        <constant type="character">&amp;attr_value=</constant>
         <data type="character" terminator_type="end_of_data">
           <update state="Value" type="string" />
         </data>
+        <append_data_to_state_names state="Name" />
         <append_data_to_state_names state="EntityID" />
       </status_message>
 
@@ -206,7 +285,7 @@
         <command_interface interface="ip">
           <command response_required="no">
             <parameter_list>
-              <parameter parameter_data_type="character">socket_on,</parameter>
+              <parameter parameter_data_type="character">switch_on,</parameter>
               <parameter parameter_data_type="character" action_argument="Address1"/>
             </parameter_list>
             <delay ms_delay="10"/>
@@ -224,7 +303,7 @@
         <command_interface interface="ip">
           <command response_required="no">
             <parameter_list>
-              <parameter parameter_data_type="character">socket_off,</parameter>
+              <parameter parameter_data_type="character">switch_off,</parameter>
               <parameter parameter_data_type="character" action_argument="Address1"/>
             </parameter_list>
             <delay ms_delay="10"/>
@@ -255,41 +334,6 @@
         </command_interface>
       </action>
 
-      <action name="ButtonPress">
-        <action_argument name="Address1" note="Entity ID"/>
-        <action_argument name="Address2" note="LED ID"/>
-        <action_argument name="Address3" note="not used"/>
-        <action_argument name="Address4" note="not used"/>
-        <action_argument name="Address5" note="not used"/>
-        <action_argument name="Address6" note="not used"/>
-        <command_interface interface="ip">
-          <command response_required="no">
-            <parameter_list>
-              <parameter parameter_data_type="character">button_press,</parameter>
-              <parameter parameter_data_type="character" action_argument="Address1"/>
-            </parameter_list>
-            <delay ms_delay="10"/>
-          </command>
-        </command_interface>
-      </action>
-      <action name="ButtonPressAndRelease">
-        <action_argument name="Address1" note="Entity ID"/>
-        <action_argument name="Address2" note="LED ID"/>
-        <action_argument name="Address3" note="not used"/>
-        <action_argument name="Address4" note="not used"/>
-        <action_argument name="Address5" note="not used"/>
-        <action_argument name="Address6" note="not used"/>
-        <command_interface interface="ip">
-          <command response_required="no">
-            <parameter_list>
-              <parameter parameter_data_type="character">button_press,</parameter>
-              <parameter parameter_data_type="character" action_argument="Address1"/>
-            </parameter_list>
-            <delay ms_delay="10"/>
-          </command>
-        </command_interface>
-      </action>
-
       <entity name="Dimmer Group" address_components="1">
         <slider_representation>
           <press_action name="DimmerSet"/>
@@ -304,10 +348,10 @@
 
       <entity name="Switch" address_components="1">
         <toggle_button_representation>
-          <release_action name="SwitchOn"></release_action>
-          <toggle_release_action name="SwitchOff"></toggle_release_action>
-          <osd_press_action name="SwitchOn"></osd_press_action>
-          <osd_hold_action name="SwitchOff"></osd_hold_action>
+          <release_action name="SwitchOn"> </release_action>
+          <toggle_release_action name="SwitchOff"> </toggle_release_action>
+          <osd_press_action name="SwitchOn"> </osd_press_action>
+          <osd_hold_action name="SwitchOff"> </osd_hold_action>
           <toggleOnUsingState name="IsLightOn">
             <unique_identifier name="Address1" address_component="1" format="%s"/>
           </toggleOnUsingState>
@@ -316,31 +360,8 @@
           <with_arg name="Address1" address_component="1" format="%s" />
         </query_status_with_action>
       </entity>
-
-      <entity name="Keypad Button" address_components="2">
-        <toggle_button_representation>
-            <press_action name="ButtonPress"></press_action>
-            <!-- <release_action name="ButtonRelease"></release_action> -->
-            <toggle_action name="ButtonPress"></toggle_action>
-            <toggle_release_action name="ButtonRelease"></toggle_release_action>
-            <osd_press_action name="ButtonPressAndRelease"></osd_press_action>
-            <osd_hold_action name="ButtonPressAndRelease"></osd_hold_action>
-            <toggleOnUsingState name="IsLedOn">
-                <unique_identifier name="Address2" address_component="2" format="%s"/>
-            </toggleOnUsingState>
-        </toggle_button_representation>
-
-        <query_status_with_action name="TrackEntity" period_ms="0">
-          <with_arg name="Address1" address_component="1" format="%s" />
-        </query_status_with_action>
-
-        <query_status_with_action name="TrackEntity" period_ms="0">
-          <with_arg name="Address1" address_component="2" format="%s" />
-        </query_status_with_action>
-
-    </entity>
     </resource_component_actions>
-
+    
     <resource_component_actions resource_type="ENV_SHADECONTROLLER_SOURCE">
 
       <action name="ShadeSet">
@@ -516,19 +537,6 @@
         </command_interface>
       </action>
 
-      <action name="ToggleGarageDoor">
-        <action_argument name="GarageDoorAddress" note="Entity ID"/>
-        <update_state_variable name="GarageDoorStatus_*" update_type="set" update_source="constant" wildcard_format="%s" wildcard_source="action_argument" wildcard_source_name="GarageDoorAddress">Toggle</update_state_variable>
-        <command_interface interface="ip">
-          <command response_required="no">
-            <parameter_list>
-              <parameter parameter_data_type="character">toggle_garage_door,</parameter>
-              <parameter parameter_data_type="character" action_argument="GarageDoorAddress"/>
-            </parameter_list>
-          </command>
-        </command_interface>
-      </action>
-
       <entity name="Garage Door" address_components="1">
         <toggle_button_representation>
           <release_action name="OpenGarageDoor"/>
@@ -549,9 +557,10 @@
       <action name="AwaitConnection">
         <update_state_variable name="HassEntityArray" update_type="set" update_source="constant"></update_state_variable>
         <execute_on_schedule period_ms="0"/>
+        <!-- <execute_action_after_delay ms_delay="10000" action_name="Start" action_type="CUSTOM"></execute_action_after_delay>
         <execute_action_after_delay ms_delay="11000" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
         <execute_action_after_delay ms_delay="11000" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
-        <execute_action_after_delay ms_delay="15000" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay>
+        <execute_action_after_delay ms_delay="15000" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay> -->
       </action>
       <action name="SubscribeEvents">
         <execute_on_state_variable_condition name="subscribe_all_events" test_condition="not_equal">NO</execute_on_state_variable_condition>
