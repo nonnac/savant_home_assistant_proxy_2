@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="racepoint_component_profile.xsd"
  manufacturer="hass" model="thermostat(dual)" device_class="HVAC_controller"
-  minimum_component_engine_version="8.5" rpm_xml_version="1.06" rpm_xml_version_date="$Date$" alias="Hass Thermostat">
+  minimum_component_engine_version="8.5" rpm_xml_version="1.07" rpm_xml_version_date="$Date$" alias="Hass Thermostat">
   <notes>
 
   </notes>
@@ -28,7 +28,7 @@
   <state_variable_list>
 
     <state_variable name="subscribe_all_events" owning_logical_component="Home Assistant" state_center_type="string" user_editable="yes">NO</state_variable>
-    <state_variable name="state_filter" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="state_filter" user_editable="yes">temperature,current_temperature,preset_mode,state</state_variable>
+    <state_variable name="state_filter" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="state_filter" user_editable="yes">hvac_modes,min_temp,max_temp,min_humidity,max_humidity,fan_modes,current_temperature,temperature,target_temp_high,target_temp_low,current_humidity,humidity,fan_mode,hvac_action,friendly_name,supported_features,state</state_variable>
     <state_variable name="ThermostatEntityID" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="ThermostatEntityID" user_editable="yes"></state_variable>
     <state_variable name="HassEntityArray" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="HassEntityArray" user_editable="yes"></state_variable>
     <state_variable name="ThermostatCurrentHeatPoint_1" owning_logical_component="Home Assistant" state_center_binding="ThermostatCurrentHeatPoint_1" state_center_type="float"></state_variable>
@@ -158,6 +158,20 @@
         <!--<append_data_to_state_names state="EntityID" />-->
       </status_message>
 
+      <status_message name="curent_humidity">
+        <constant type="character">entity_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="EntityID" type="string"></update>
+        </data>
+        <data type="character" terminator_type="character" terminator="attr_name=">
+          <update state="Junk" type="string"></update>
+        </data>
+        <constant type="character">current_humidity&amp;attr_value=</constant>
+        <data type="character" terminator_type="end_of_data">
+          <update state="ThermostatCurrentHumidity_1" type="float" />
+        </data>
+      </status_message>
+
       <status_message name="curent_temperature">
         <constant type="character">entity_id=</constant>
         <data type="character" terminator_type="character" terminator="&amp;">
@@ -255,7 +269,7 @@
 
 
     <action name="SetHeatPointTemperature">
-      <action_argument name="ThermostatAddress" note="Thermostat device_id"/>
+      <action_argument name="ThermostatAddress" note="enter 1"/>
       <action_argument name="ThermostatAddress2" note="not used"/>
       <action_argument name="HeatPointTemperature" note="Temperature Bound for Heat Operation in C"/>
       <update_state_variable name="ThermostatCurrentHeatPoint_1" update_type="set" update_source="action_argument">HeatPointTemperature</update_state_variable>
@@ -276,7 +290,7 @@
     </action>
 
     <action name="SetCoolPointTemperature">
-      <action_argument name="ThermostatAddress" note="Thermostat device_id"/>
+      <action_argument name="ThermostatAddress" note="enter 1"/>
       <action_argument name="ThermostatAddress2" note="not used"/>
       <action_argument name="CoolPointTemperature" note="Temperature Bound for Heat Operation in C"/>
       <update_state_variable name="ThermostatCurrentCoolPoint_1" update_type="set" update_source="action_argument">CoolPointTemperature</update_state_variable>
