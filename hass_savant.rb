@@ -481,12 +481,138 @@ module HassRequests
     )
   end
 
-  def mediaplayer_send_command(entity_id, command)
+  def media_player_send_command(entity_id, command)
     send_data(
-      type: :call_service, domain: :remote, service: :send_command,
+      type: :call_service, domain: :media_player, service: :send_command,
       service_data: { command: command },
       target: { entity_id: entity_id }
     )
+  end
+
+  def media_player_select_source(entity_id, source)
+    send_data(
+      type: :call_service, domain: :media_player, service: :select_source,
+      service_data: { source: source },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_volume_up(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :volume_up,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_volume_down(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :volume_down,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_set_volume(entity_id, volume)
+    send_data(
+      type: :call_service, domain: :media_player, service: :volume_set,
+      service_data: { volume_level: (volume.to_f / 100.0) },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_clear_playlist(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :clear_playlist,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_play_pause(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :toggle,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_play(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :media_play,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_pause(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :media_pause,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_stop(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :media_stop,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_next_track(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :media_next_track,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_previous_track(entity_id)
+    send_data(
+      type: :call_service, domain: :media_player, service: :media_previous_track,
+      service_data: { },
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_shuffle_set(entity_id, shuffle)
+    send_data(
+      type: :call_service, domain: :media_player, service: :shuffle_set,
+      service_data: {repeat: shuffle.downcase == 'true'},
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_repeat_set(entity_id, repeat_mode)
+    send_data(
+      type: :call_service, domain: :media_player, service: :repeat_set,
+      service_data: {repeat: repeat_mode},
+      target: { entity_id: entity_id }
+    )
+  end
+
+  def media_player_play_media(entity_id, json_params)
+    params = JSON.parse(json_params)
+    send_data(
+      type: :call_service, domain: :media_player, service: :repeat_set,
+      service_data: {repeat: repeat_mode},
+      target: { entity_id: entity_id }
+    )
+  rescue => e
+    to_savant("#{e.message}: #{json_params}")
+  end
+
+  def media_player_media_seek(entity_id, seek_position)
+    params = JSON.parse(json_params)
+    send_data(
+      type: :call_service, domain: :media_player, service: :media_seek,
+      service_data: {seek_position: seek_position},
+      target: { entity_id: entity_id }
+    )
+  rescue => e
+    to_savant("#{e.message}: #{json_params}")
   end
 end
 
