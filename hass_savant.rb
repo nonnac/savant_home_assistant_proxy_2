@@ -680,10 +680,13 @@ class Hass
   private
 
   def substitute_ids(params)
-    params.each_slice(2) do |k,v|
+    params.each_slice(2) do |k, v|
+      next if v.empty?
+      
       @substitute_id[k] = v
       @id_substitute[v] = k
     end
+    subscribe_entities(@id_substitute.keys)
     LOG.debug([:substitute_id, @substitute_id])
   end
 

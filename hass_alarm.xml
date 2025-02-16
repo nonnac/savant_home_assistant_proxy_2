@@ -77,15 +77,16 @@
             <status_message name="websocket_connected">
                 <constant type="character">hass_websocket_connected,</constant>
                 <data type="character" terminator_type="end_of_data">
-                <update state="ws_reconnected_at" type="string"></update>
+                    <update state="ws_reconnected_at" type="string"></update>
                 </data>
                 <run_elements>
                 <actions>
                     <action name="resubscribe">
-                    <execute_action_after_delay ms_delay="100" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
-                    <execute_action_after_delay ms_delay="200" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
-                    <execute_action_after_delay ms_delay="300" action_name="SubscribeThermostatEntity" action_type="CUSTOM"></execute_action_after_delay>
-                    <execute_action_after_delay ms_delay="400" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay>
+                        <execute_action_after_delay ms_delay="100" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
+                        <execute_action_after_delay ms_delay="110" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
+                        <execute_action_after_delay ms_delay="120" action_name="SubstituteIds" action_type="CUSTOM"></execute_action_after_delay>
+                        <execute_action_after_delay ms_delay="130" action_name="SubstitutePartitions" action_type="CUSTOM"></execute_action_after_delay>
+                        <execute_action_after_delay ms_delay="150" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay>
                     </action>
                 </actions>
                 </run_elements>
