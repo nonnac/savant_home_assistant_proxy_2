@@ -1,543 +1,158 @@
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<component xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="racepoint_component_profile.xsd" manufacturer="hass" model="alarm" device_class="Security_system" minimum_component_engine_version="9.4" rpm_xml_version="1.5" rpm_xml_version_date="$Date$" alias="Hass Alarm">
-    <notes>
-        Inspect the proifle in Blueprint and add the password used to log into the Envisalink's local web page, in the serial number field.
-            - Recommended to NOT use the default user's password.
-        
-        <!--You will need to add DisarmAlarm and ArmAlarmInstant button on to the UI screen.-->
-        
-        - No zone bypass feedback/command available
-        - No user selection available.
-		====================== Change Log ==================
-		Version: 1.4 Change: Added custom property of DefaultPanelArmingState = Disarmed to account for lack of feedback during countdown.  Risk: Low Importance: Helpful
-		Version: 1.3 Change: Updated to allow new Security UI.  Risk: Low Importance: Critical
-		Version: 1.2 Change: Send user code when eyezon request it.  Risk: Low Importance: Critical
-    </notes>
-    <component_properties>
-        <custom_properties>
-            <property name="DefaultPanelArmingState">Disarmed</property>
-        </custom_properties>
-    </component_properties>
+<?xml version="1.0" encoding="UTF-8"?>
+<component xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="racepoint_component_profile.xsd"
+  manufacturer="Hass" model="Energy_Monitor" alias="Hass Energy monitoring"
+  device_class="Energy_Resource_monitor"
+  minimum_component_engine_version="10.2" rpm_xml_version="1.10">
 
-    <control_interfaces preferred="ip">
-        <ip port="8080" response_time_length_ms="50" protocol="tcp">
-        <send_postfix type="hex">0A</send_postfix>
-        <receive_end_condition test_condition="data" type="hex">0A</receive_end_condition>
-        </ip>
-    </control_interfaces>
-    <media_interfaces>
-        <data name_on_component="ETHERNET">
-            <combined_media>
-                <data_media type="ethernet"></data_media>
-                <control port="8080"></control>
-            </combined_media>
+  <notes>
+
+
+  </notes>
+  <control_interfaces preferred="ip">
+    <ip port="8080" response_time_length_ms="50" protocol="tcp">
+      <send_postfix type="hex">0A</send_postfix>
+      <receive_end_condition test_condition="data" type="hex">0A</receive_end_condition>
+    </ip>
+  </control_interfaces>
+
+  <media_interfaces>
+    <data name_on_component="Ethernet">
+      <combined_media>
+        <data_media type="ethernet" />
+        <control port="8080" />
+      </combined_media>
+    </data>
+
+    <internal name_on_component="Resource Monitor">
+      <environmental_media></environmental_media>
+      <resource resource_type="ENV_ENERGYRESOURCEMONITOR_SOURCE" />
+    </internal>
+  </media_interfaces>
+
+  <state_variable_list>
+    <state_variable name="subscribe_all_events" owning_logical_component="Monitor" state_center_type="string" user_editable="yes">NO</state_variable>
+    <state_variable name="state_filter" owning_logical_component="Monitor" state_center_type="string" state_center_binding="state_filter" user_editable="yes">state</state_variable>
+    <state_variable name="HassEntityId" owning_logical_component="Monitor" state_center_type="string" state_center_binding="HassEntityId" user_editable="yes">HassEntityId</state_variable>
+    <state_variable name="CurrentEnergyModeName" state_center_binding="CurrentEnergyModeName" owning_logical_component="Monitor" state_center_type="string"></state_variable>
+    <state_variable name="CurrentEnergyMode" state_center_binding="CurrentEnergyMode" owning_logical_component="Monitor" state_center_type="integer"></state_variable>
+    <state_variable name="GraphType" state_center_binding="GraphType" owning_logical_component="Monitor" state_center_type="string">day</state_variable>
+    <state_variable name="GraphSelection" state_center_binding="GraphSelection" owning_logical_component="Monitor" state_center_type="string">Chan1Power</state_variable>
+  </state_variable_list>
+
+  <logical_component logical_component_name="Monitor">
+    <implementation>
+      <internal name_on_component="Resource Monitor" />
+    </implementation>
+
+    <status_messages>
+      <status_message name="websocket_connected">
+        <constant type="character">hass_websocket_connected,</constant>
+        <data type="character" terminator_type="end_of_data">
+          <update state="ws_reconnected_at" type="string"></update>
         </data>
-        <internal name_on_component="Security System Controller">
-            <environmental_media></environmental_media>
-            <resource resource_type="ENV_SECURITYSYSTEMCONTROLLER_SOURCE"></resource>
-        </internal>
-    </media_interfaces>
-    <state_variable_list>
-        <state_variable name="Partition1Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_1">Partition 1</state_variable>
-        <state_variable name="Partition2Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_2">Partition 2</state_variable>
-        <state_variable name="Partition3Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_3">Partition 3</state_variable>
-        <state_variable name="Partition4Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_4">Partition 4</state_variable>
-        <state_variable name="Partition5Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_5">Partition 5</state_variable>
-        <state_variable name="Partition6Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_6">Partition 6</state_variable>
-        <state_variable name="Partition7Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_7">Partition 7</state_variable>
-        <state_variable name="Partition8Label" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="CurrentPartitionLabel_8">Partition 8</state_variable>
+        <run_elements>
+          <actions>
+            <action name="resubscribe">
+              <execute_action_after_delay ms_delay="100" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
+              <execute_action_after_delay ms_delay="200" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
+              <execute_action_after_delay ms_delay="300" action_name="SubscribeThermostatEntity" action_type="CUSTOM"></execute_action_after_delay>
+              <execute_action_after_delay ms_delay="400" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay>
+            </action>
+          </actions>
+        </run_elements>
+      </status_message>
+      <status_message name="pong">
+        <data type="character" terminator_type="character" terminator=",">
+          <update state="pong_id" type="string"></update>
+        </data>
+        <constant type="character">pong,</constant>
+        <data type="character" terminator_type="end_of_data">
+          <update state="last_pong_time" type="string"></update>
+        </data>
+      </status_message>
 
+      <status_message name="State">
+        <constant type="character">entity_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="EntityID" type="string"></update>
+        </data>
+        <constant type="character">substitute_id=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="SubstituteID" type="string"></update>
+        </data>
+        <constant type="character">parent_keys=</constant>
+        <data type="character" terminator_type="character" terminator="&amp;">
+          <update state="ParentKeys" type="string"></update>
+        </data>
+        <constant type="character">attr_name=state&amp;attr_value=</constant>
+        <data type="character" terminator_type="end_of_data">
+          <update state="Chan1Power" type="string"></update>
+        </data>
+      </status_message>
+    </status_messages>
 
-        <state_variable name="Partition1Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_1" user_editable="yes">alarm_control_panel.alarm</state_variable>
-        <state_variable name="Partition2Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_2" user_editable="yes"></state_variable>
-        <state_variable name="Partition3Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_3" user_editable="yes"></state_variable>
-        <state_variable name="Partition4Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_4" user_editable="yes"></state_variable>
-        <state_variable name="Partition5Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_5" user_editable="yes"></state_variable>
-        <state_variable name="Partition6Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_6" user_editable="yes"></state_variable>
-        <state_variable name="Partition7Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_7" user_editable="yes"></state_variable>
-        <state_variable name="Partition8Entity" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="PartitionEntity_8" user_editable="yes"></state_variable>
-
-        <state_variable name="ReplyPartitionNumber" owning_logical_component="Home Assistant" state_center_binding="ReplyPartitionNumber" state_center_type="integer">1</state_variable>
-        <!-- Holds User Number -->
-        <state_variable name="UserCode" state_center_type="string"></state_variable>
-        <state_variable name="UserCodeHold" state_center_type="string"></state_variable>
-
-
-        <state_variable name="subscribe_all_events" owning_logical_component="Home Assistant" state_center_type="string" user_editable="yes">YES</state_variable>
-        <state_variable name="state_filter" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="state_filter" user_editable="yes">state,zone,partition_state,alpha,ac_present,beep,bypass,chime,entry_delay,exit_delay,last_armed_by_user,last_disarmed_by_user,ready,bat_trouble,trouble,fire,alarm,alarm_fire_zone,alarm_in_memory,armed_away,armed_stay,armed_zero_entry_delay,icon,friendly_name</state_variable>
-        <state_variable name="substitute_ids" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="substitute_ids" user_editable="yes">1,binary_sensor.zone1,2,binary_sensor.zone2</state_variable>
-        <state_variable name="HassEntityArray" owning_logical_component="Home Assistant" state_center_type="string" state_center_binding="HassEntityArray" user_editable="yes">sensor.alarm_keypad</state_variable>
-
-    </state_variable_list>
-    <logical_component logical_component_name="Home Assistant">
-        <implementation>
-            <internal name_on_component="Security System Controller"></internal>
-        </implementation>
-        <status_messages>
-            <status_message name="websocket_connected">
-                <constant type="character">hass_websocket_connected,</constant>
-                <data type="character" terminator_type="end_of_data">
-                <update state="ws_reconnected_at" type="string"></update>
-                </data>
-                <run_elements>
-                <actions>
-                    <action name="resubscribe">
-                    <execute_action_after_delay ms_delay="100" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
-                    <execute_action_after_delay ms_delay="200" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
-                    <execute_action_after_delay ms_delay="300" action_name="SubscribeThermostatEntity" action_type="CUSTOM"></execute_action_after_delay>
-                    <execute_action_after_delay ms_delay="400" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay>
-                    </action>
-                </actions>
-                </run_elements>
-            </status_message>
-
-          <status_message name="pong">
-            <data type="character" terminator_type="character" terminator=",">
-              <update state="pong_id" type="string"></update>
-            </data>
-            <constant type="character">pong,</constant>
-            <data type="character" terminator_type="end_of_data">
-              <update state="last_pong_time" type="string"></update>
-            </data>
-          </status_message>
-
-
-            <status_message name="Alpha">
-                <constant type="character">entity_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="EntityID" type="string"></update>
-                </data>
-                <constant type="character">substitute_id=partition</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="SubstituteID" type="string"></update>
-                </data>
-                <constant type="character">parent_keys=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="ParentKeys" type="string"></update>
-                </data>
-                <constant type="character">attr_name=alpha&amp;</constant>
-                <constant type="character">attr_value=</constant>
-                <data type="character" terminator_type="end_of_data">
-                    <!-- <update state="CurrentPartitionStatus" type="string" /> -->
-                    <update state="CurrentLCDContentsLine1" type="string"/>
-                    <update state="CurrentLCDContentsLine2" type="string"/>
-                </data>
-                <append_data_to_state_names state="SubstituteID" />
-            </status_message>
-
-            <status_message name="State">
-                <constant type="character">entity_id=alarm_control_panel.</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="EntityID" type="string"></update>
-                </data>
-                <constant type="character">substitute_id=partition</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="SubstituteID" type="string"></update>
-                </data>
-                <constant type="character">parent_keys=&amp;attr_name=state&amp;</constant>
-                <constant type="character">attr_value=</constant>
-                <data type="character" terminator_type="end_of_data">
-                    <data_map match_required="yes">
-                        <map key="armed_stay">
-                            <update state="CurrentPartitionStatus" type="string">Stay</update>
-                            <update state="IsPartitionReady" type="boolean">true</update>
-                            <update state="IsPartitionNotReady" type="boolean">false</update>
-                            <update state="IsPartitionArmed" type="boolean">true</update>
-                            <update state="IsPartitionDisarmed" type="boolean">false</update>
-                            <update state="IsPartitionAlarmActive" type="boolean">false</update>
-                            <update state="CurrentPartitionArmingStatus" type="string">ArmedStay</update>
-                        </map>
-                        <map key="armed_away">
-                            <update state="CurrentPartitionStatus" type="string">Away</update>
-                            <update state="IsPartitionReady" type="boolean">true</update>
-                            <update state="IsPartitionNotReady" type="boolean">false</update>
-                            <update state="IsPartitionArmed" type="boolean">true</update>
-                            <update state="IsPartitionDisarmed" type="boolean">false</update>
-                            <update state="IsPartitionAlarmActive" type="boolean">false</update>
-                            <update state="CurrentPartitionArmingStatus" type="string">ArmedAway</update>
-                        </map>
-                        <map key="arming">
-                            <!-- <update state="IsPartitionArmed" type="boolean">false</update>
-                            <update state="IsPartitionDisarmed" type="boolean">false</update> -->
-                            <!-- <update state="CurrentPartitionArmingStatus" type="string">Arming</update> -->
-                            <update state="CurrentPartitionStatus" type="string">Exit Delay</update>
-                            <update state="IsPartitionReady" type="boolean">true</update>
-                            <update state="IsPartitionNotReady" type="boolean">false</update>
-                            <update state="IsPartitionArmed" type="boolean">true</update>
-                            <update state="IsPartitionDisarmed" type="boolean">true</update>
-                            <update state="IsPartitionAlarmActive" type="boolean">false</update>
-                        </map>
-                        <map key="disarmed">
-                            <update state="IsPartitionArmed" type="boolean">false</update>
-                            <update state="IsPartitionDisarmed" type="boolean">true</update>
-                            <update state="CurrentPartitionArmingStatus" type="string">Disarmed</update>
-                            <update state="CurrentPartitionStatus" type="string">Disarmed</update>
-                            <update state="IsPartitionReady" type="boolean">true</update>
-                            <update state="IsPartitionNotReady" type="boolean">false</update>
-                            <update state="IsPartitionArmed" type="boolean">false</update>
-                            <update state="IsPartitionDisarmed" type="boolean">true</update>
-                            <update state="IsPartitionAlarmActive" type="boolean">false</update>
-                        </map>
-                        <map key="alarm">
-                            <update state="IsPartitionArmed" type="boolean">false</update>
-                            <update state="IsPartitionDisarmed" type="boolean">true</update>
-                            <update state="CurrentPartitionArmingStatus" type="string">Alarm</update>
-                            <update state="CurrentPartitionStatus" type="string">Alarm</update>
-                            <update state="IsPartitionReady" type="boolean">true</update>
-                            <update state="IsPartitionNotReady" type="boolean">false</update>
-                            <update state="IsPartitionArmed" type="boolean">false</update>
-                            <update state="IsPartitionDisarmed" type="boolean">true</update>
-                            <update state="IsPartitionAlarmActive" type="boolean">true</update>
-                        </map>
-                        <map key="triggered">
-                            <update state="IsPartitionArmed" type="boolean">false</update>
-                            <update state="IsPartitionDisarmed" type="boolean">true</update>
-                            <update state="CurrentPartitionArmingStatus" type="string">Alarm</update>
-                            <update state="CurrentPartitionStatus" type="string">Alarm</update>
-                            <update state="IsPartitionReady" type="boolean">true</update>
-                            <update state="IsPartitionNotReady" type="boolean">false</update>
-                            <update state="IsPartitionArmed" type="boolean">false</update>
-                            <update state="IsPartitionDisarmed" type="boolean">true</update>
-                            <update state="IsPartitionAlarmActive" type="boolean">true</update>
-                        </map>
-                    </data_map>
-                </data>
-                <append_data_to_state_names state="SubstituteID" />
-            </status_message>
-
-        
-            <status_message name="ZoneNumber">
-                <constant type="character">entity_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="EntityID" type="string"></update>
-                </data>
-                <constant type="character">substitute_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="SubstituteID" type="string"></update>
-                </data>
-                <constant type="character">parent_keys=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;" >
-                    <update state="ParentKeys" type="string" />
-                </data>
-                <constant type="character">attr_name=zone&amp;</constant>
-                <constant type="character">attr_value=</constant>
-                <data type="character" terminator_type="end_of_data">
-                    <update state="ZoneNumber" type="string" />
-                </data>
-                <append_data_to_state_names state="SubstituteID" />
-            </status_message>
-
-
-            <status_message name="ZoneStatus">
-                <constant type="character">entity_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="EntityID" type="string"></update>
-                </data>
-                <constant type="character">substitute_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="SubstituteID" type="string"></update>
-                </data>
-                <constant type="character">parent_keys=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;" >
-                    <update state="ParentKeys" type="string" />
-                </data>
-                <constant type="character">attr_name=state&amp;</constant>
-                <constant type="character">attr_value=</constant>
-                <data type="character" terminator_type="end_of_data">
-                    <update state="ZoneState" type="string" />
-                    <data_map match_required="yes">
-                        <map key="on">
-                            <update state="ZoneSummary" type="integer">1</update>
-                            <update state="CurrentZoneStatus" type="string">Open</update>
-                            <update state="IsZoneRestored" type="boolean">false</update>
-                            <update state="IsZoneAlarmActive" type="boolean">false</update>
-                            <update state="IsZoneTampered" type="boolean">false</update>
-                            <update state="IsZoneFaulted" type="boolean">false</update>
-                            <update state="IsZoneOpen" type="boolean">true</update>
-                            <update state="IsZoneNormal" type="boolean">false</update>
-                        </map>
-                        <map key="off">
-                            <update state="ZoneSummary" type="integer">0</update>
-                            <update state="CurrentZoneStatus" type="string">Normal</update>
-                            <update state="IsZoneRestored" type="boolean">false</update>
-                            <update state="IsZoneAlarmActive" type="boolean">false</update>
-                            <update state="IsZoneTampered" type="boolean">false</update>
-                            <update state="IsZoneFaulted" type="boolean">false</update>
-                            <update state="IsZoneOpen" type="boolean">false</update>
-                            <update state="IsZoneNormal" type="boolean">true</update>
-                        </map>
-                    </data_map>
-                </data>
-                <append_data_to_state_names state="SubstituteID" />
-            </status_message>
-
-
-            <status_message name="GeneralState1">
-                <constant type="character">entity_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="EntityID" type="string"></update>
-                </data>
-                <constant type="character">substitute_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="SubstituteID" type="string"></update>
-                </data>
-                <constant type="character">parent_keys=attr_name=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;" >
-                    <update state="Name" type="string" />
-                </data>
-                <constant type="character">attr_value=</constant>
-                <data type="character" terminator_type="end_of_data">
-                    <update state="Value" type="string" />
-                </data>
-                <append_data_to_state_names state="EntityID" />
-                <append_data_to_state_names state="Name" />
-            </status_message>
-            <status_message name="GeneralState2">
-                <constant type="character">entity_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="EntityID" type="string"></update>
-                </data>
-                <constant type="character">substitute_id=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;">
-                  <update state="SubstituteID" type="string"></update>
-                </data>
-                <constant type="character">parent_keys=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;" >
-                    <update state="ParentKeys" type="string" />
-                </data>
-                <constant type="character">attr_name=</constant>
-                <data type="character" terminator_type="character" terminator="&amp;" >
-                    <update state="Name" type="string" />
-                </data>
-                <constant type="character">attr_value=</constant>
-                <data type="character" terminator_type="end_of_data">
-                    <update state="Value" type="string" />
-                </data>
-                <append_data_to_state_names state="ParentKeys" />
-                <append_data_to_state_names state="EntityID" />
-                <append_data_to_state_names state="Name" />
-            </status_message>
-        </status_messages>
-        <resource_component_actions resource_type="ENV_SECURITYSYSTEMCONTROLLER_SOURCE">
-            <action name="ArmAlarmAway">
-                <action_argument name="PartitionNumber" note="Partition to arm" />
-                <update_state_variable name="UserCodeHold" update_type="set" update_source="state_variable">UserCode</update_state_variable>
-                <update_state_variable name="UserCode" update_type="set" update_source="constant"></update_state_variable>
-                <command_interface interface="ip">
-                    <command response_required="no">
-                        <command_string type="character">alarm_arm_away,partition</command_string>
-                        <parameter_list>
-                            <parameter parameter_data_type="character" action_argument="PartitionNumber"></parameter>
-                            <parameter parameter_data_type="character">,</parameter>
-                            <parameter parameter_data_type="character" action_argument="UserCode"></parameter>
-                        </parameter_list>
-                    </command>
-                </command_interface>
-            </action>
-            <action name="ArmAlarmStay">
-                <action_argument name="PartitionNumber" note="Partition to arm" />
-                <update_state_variable name="UserCodeHold" update_type="set" update_source="state_variable">UserCode</update_state_variable>
-                <update_state_variable name="UserCode" update_type="set" update_source="constant"></update_state_variable>
-                <command_interface interface="ip">
-                    <command response_required="no">
-                        <command_string type="character">alarm_arm_home,partition</command_string>
-                        <parameter_list>
-                            <parameter parameter_data_type="character" action_argument="PartitionNumber"></parameter>
-                            <parameter parameter_data_type="character">,</parameter>
-                            <parameter parameter_data_type="character" action_argument="UserCode"></parameter>
-                        </parameter_list>
-                    </command>
-                </command_interface>
-            </action>
-            <action name="DisarmAlarm">
-                <action_argument name="PartitionNumber" note="Partition to arm" />
-                <update_state_variable name="UserCodeHold" update_type="set" update_source="state_variable">UserCode</update_state_variable>
-                <update_state_variable name="UserCode" update_type="set" update_source="constant"></update_state_variable>
-                <command_interface interface="ip">
-                    <command response_required="no">
-                        <command_string type="character">alarm_disarm,partition</command_string>
-                        <parameter_list>
-                            <parameter parameter_data_type="character" action_argument="PartitionNumber"></parameter>
-                            <parameter parameter_data_type="character">,</parameter>
-                            <parameter parameter_data_type="character" action_argument="UserCode"></parameter>
-                        </parameter_list>
-                    </command>
-                </command_interface>
-            </action>
-            <action name="KeypadFire">
-                <action_argument name="ZoneNumber" note="Not used"></action_argument>
-                <action_argument name="PartitionNumber" note="Not used"></action_argument>
-                <command_interface interface="ip">
-                    <command>
-                        <command_string>0601</command_string>
-                        <parameter_list>
-                            <checksum_parameter parameter_data_type="character_hex" parameter_data_width="2" parameter_total_width="2"></checksum_parameter>
-                        </parameter_list>
-                        <delay ms_delay="200"></delay>
-                    </command>
-                </command_interface>
-            </action>
-            <action name="KeypadMedical">
-                <action_argument name="ZoneNumber" note="Not used"></action_argument>
-                <action_argument name="PartitionNumber" note="Not used"></action_argument>
-                <command_interface interface="ip">
-                    <command>
-                        <command_string>0602</command_string>
-                        <parameter_list>
-                            <checksum_parameter parameter_data_type="character_hex" parameter_data_width="2" parameter_total_width="2"></checksum_parameter>
-                        </parameter_list>
-                        <delay ms_delay="200"></delay>
-                    </command>
-                </command_interface>
-            </action>
-            <action name="KeypadPolice">
-                <action_argument name="ZoneNumber" note="Not used"></action_argument>
-                <action_argument name="PartitionNumber" note="Not used"></action_argument>
-                <command_interface interface="ip">
-                    <command>
-                        <command_string>0603</command_string>
-                        <parameter_list>
-                            <checksum_parameter parameter_data_type="character_hex" parameter_data_width="2" parameter_total_width="2"></checksum_parameter>
-                        </parameter_list>
-                        <delay ms_delay="200"></delay>
-                    </command>
-                </command_interface>
-            </action>
-            <action name="NumberZero">
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">0</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberOne">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">1</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberTwo">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">2</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberThree">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">3</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberFour">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">4</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberFive">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">5</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberSix">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">6</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberSeven">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">7</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberEight">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">8</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="NumberNine">
-                <action_argument name="PartitionNumber" note="DSC Partition Number (1-8)"></action_argument>
-                <action_argument name="ZoneNumber" note="not used"></action_argument>
-                <update_state_variable name="UserCode" update_type="append" update_source="constant">9</update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="ClearUserCode">
-                <update_state_variable name="UserCode" update_type="append" update_source="constant"></update_state_variable>
-                <command_interface interface="ip">
-                    <command></command>
-                </command_interface>
-            </action>
-            <action name="SmartPin">
-                <action_argument name="MacroName" note="name of the smart pin macro to run"></action_argument>
-                <action_argument name="PartitionNumber" note="Partition Number (1 - N)"></action_argument>
-                <action_argument name="User" note="user if applicable"></action_argument>
-                <action_argument name="UserCode" note="pincode to send for the macro"></action_argument>
-                <action_argument name="ZoneNumber" note="zone number used in macro"></action_argument>
-                <command_interface interface="ip">
-                    <command response_required="no">
-                        <command_string macro_name="SmartPinMacro"></command_string>
-                        <delay ms_delay="200"></delay>
-                    </command>
-                </command_interface>
-            </action>
-            <entity name="Zone" address_components="1">
-                <security_zone_group_representation supports_bypass="no">
-                    <status_valueSource name="CurrentZoneStatus">
-                        <unique_identifier name="ZoneNumber" address_component="1" format="%d"></unique_identifier>
-                    </status_valueSource>
-                    <label_valueSource name="CurrentZoneLabel">
-                        <unique_identifier name="ZoneNumber" address_component="1" format="%d"></unique_identifier>
-                    </label_valueSource>
-                </security_zone_group_representation>
-            </entity>
-            <entity name="Partition" address_components="1">
-                <security_partition_group_representation screen_unique_identifier_format="%d">
-                    <status_valueSource name="CurrentPartitionStatus">
-                        <unique_identifier name="PartitionNumber" address_component="1" format="%s"></unique_identifier>
-                    </status_valueSource>
-                    <label_valueSource name="CurrentPartitionLabel">
-                        <unique_identifier name="PartitionNumber" address_component="1" format="%s"></unique_identifier>
-                    </label_valueSource>
-                </security_partition_group_representation>
-            </entity>
-        </resource_component_actions>
-    <custom_component_actions>
-      <!-- <action name="ping">
+    <resource_component_actions resource_type="ENV_ENERGYRESOURCEMONITOR_SOURCE">
+      <action name="SetGraphTypeDay">
+        <update_state_variable name="GraphType" update_type="set" update_source="constant">day</update_state_variable>
         <command_interface interface="ip">
-          <command response_required="no">
-            <command_string type="character">ping</command_string>
-          </command>
+          <command></command>
         </command_interface>
-        <execute_on_schedule period_ms="30"></execute_on_schedule>
-      </action> -->
+      </action>
+      <action name="SetGraphTypeWeek">
+        <update_state_variable name="GraphType" update_type="set" update_source="constant">week</update_state_variable>
+        <command_interface interface="ip">
+          <command></command>
+        </command_interface>
+      </action>
+      <action name="SetGraphTypeMonth">
+        <update_state_variable name="GraphType" update_type="set" update_source="constant">month</update_state_variable>
+        <command_interface interface="ip">
+          <command></command>
+        </command_interface>
+      </action>
+      <action name="SetGraphTypeYear">
+        <update_state_variable name="GraphType" update_type="set" update_source="constant">year</update_state_variable>
+        <command_interface interface="ip">
+          <command></command>
+        </command_interface>
+      </action>
+      <action name="SetGraphSelection1">
+        <update_state_variable name="GraphSelection" update_type="set" update_source="constant">Chan1Power</update_state_variable>
+        <command_interface interface="ip">
+          <command></command>
+        </command_interface>
+      </action>
+      <action name="SetGraphSelection2">
+        <update_state_variable name="GraphSelection" update_type="set" update_source="constant">Chan2Power</update_state_variable>
+        <command_interface interface="ip">
+          <command></command>
+        </command_interface>
+      </action>
+      <action name="SetGraphSelection3">
+        <update_state_variable name="GraphSelection" update_type="set" update_source="constant">Chan3Power</update_state_variable>
+        <command_interface interface="ip">
+          <command></command>
+        </command_interface>
+      </action>
+
+      <entity name="Section" address_components="1">
+        <screen_representation>
+        </screen_representation>
+      </entity>
+      <entity name="Channel" address_components="1">
+        <screen_representation>
+        </screen_representation>
+      </entity>
+    </resource_component_actions>
+
+    <custom_component_actions>
+
+
       <!-- <action name="AwaitConnection">
-        <execute_on_schedule period_ms="0"/>
-        <execute_action_after_delay ms_delay="10000" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
+        <execute_on_schedule period_ms="0" />
+        <execute_action_after_delay ms_delay="11000" action_name="SubscribeEvents" action_type="CUSTOM"></execute_action_after_delay>
         <execute_action_after_delay ms_delay="11000" action_name="StateFilter" action_type="CUSTOM"></execute_action_after_delay>
-        <execute_action_after_delay ms_delay="12000" action_name="SubstituteIds" action_type="CUSTOM"></execute_action_after_delay>
-        <execute_action_after_delay ms_delay="13000" action_name="SubstitutePartitions" action_type="CUSTOM"></execute_action_after_delay>
         <execute_action_after_delay ms_delay="15000" action_name="SubscribeEntities" action_type="CUSTOM"></execute_action_after_delay>
       </action> -->
       <action name="SubscribeEvents">
@@ -553,42 +168,7 @@
           <command response_required="no">
             <command_string type="character">state_filter,</command_string>
             <parameter_list>
-              <parameter parameter_data_type="character" state_variable="state_filter"/>
-            </parameter_list>
-          </command>
-        </command_interface>
-      </action>
-      <action name="SubstituteIds">
-        <command_interface interface="ip">
-          <command response_required="no">
-            <command_string type="character">substitute_ids,</command_string>
-            <parameter_list>
-              <parameter parameter_data_type="character" state_variable="substitute_ids"/>
-            </parameter_list>
-          </command>
-        </command_interface>
-      </action>
-      <action name="SubstitutePartitions">
-        <command_interface interface="ip">
-          <command response_required="no">
-            <command_string type="character">substitute_ids,</command_string>
-            <parameter_list>
-                <parameter parameter_data_type="character">partition1,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition1Entity"/>
-                <parameter parameter_data_type="character">,partition2,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition2Entity"/>
-                <parameter parameter_data_type="character">,partition3,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition3Entity"/>
-                <parameter parameter_data_type="character">,partition4,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition4Entity"/>
-                <parameter parameter_data_type="character">,partition5,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition5Entity"/>
-                <parameter parameter_data_type="character">,partition6,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition6Entity"/>
-                <parameter parameter_data_type="character">,partition7,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition7Entity"/>
-                <parameter parameter_data_type="character">,partition8,</parameter>
-                <parameter parameter_data_type="character" state_variable="Partition8Entity"/>
+              <parameter parameter_data_type="character" state_variable="state_filter" />
             </parameter_list>
           </command>
         </command_interface>
@@ -598,12 +178,14 @@
           <command response_required="no">
             <parameter_list>
               <parameter parameter_data_type="character">subscribe_entity,</parameter>
-              <parameter parameter_data_type="character" state_variable="HassEntityArray"></parameter>
+              <parameter parameter_data_type="character" state_variable="HassEntityId"></parameter>
             </parameter_list>
-            <delay ms_delay="50"/>
+            <delay ms_delay="50" />
           </command>
         </command_interface>
       </action>
-      </custom_component_actions>
-    </logical_component>
+    </custom_component_actions>
+
+
+  </logical_component>
 </component>
