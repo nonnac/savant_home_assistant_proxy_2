@@ -181,6 +181,11 @@ module HassMessageParsingMethods
     # Hack for brightness
     value = 3 if attr_name == 'brightness' && [1, 2].include?(value)
 
+    # Round HVAC temperatures to nearest whole number to avoid float-precision artifacts (e.g. 72.99999)
+    if value.is_a?(Numeric) && %w[current_temperature temperature target_temp_high target_temp_low min_temp max_temp].include?(attr_name)
+      value = value.round
+    end
+
     data_hash = {
       entity_id:  entity_id,
       parent_keys: parents,
