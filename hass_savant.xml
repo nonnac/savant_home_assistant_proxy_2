@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="racepoint_component_profile.xsd" manufacturer="Hass" model="Savant" alias="Home Assistant"
-  device_class="Lighting_controller" minimum_component_engine_version="0" rpm_xml_version="4.0">
+  device_class="Lighting_controller" minimum_component_engine_version="0" rpm_xml_version="4.1">
 
   <notes>
   </notes>  
@@ -379,7 +379,7 @@
               <parameter parameter_data_type="character">color_temp_set,</parameter>
               <parameter parameter_data_type="character" action_argument="Address1"/>
               <parameter parameter_data_type="character">,</parameter>
-              <parameter parameter_data_type="character" action_argument="ColorTempKelvin"/>
+              <parameter parameter_data_type="character" action_argument="DimmerLevel"/>
             </parameter_list>
             <delay ms_delay="10"/>
           </command>
