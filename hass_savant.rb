@@ -270,27 +270,30 @@ end
 
 module HassAlarmRequests
   def alarm_arm_away(entity_id, code = nil)
-    send_data(
+    payload = {
       type: :call_service, domain: :alarm_control_panel, service: :alarm_arm_away,
-      target: { entity_id: entity_id },
-      service_data: { code: code }
-    )
+      target: { entity_id: entity_id }
+    }
+    payload[:service_data] = { code: code } if code && !code.to_s.empty?
+    send_data(**payload)
   end
 
   def alarm_arm_home(entity_id, code = nil)
-    send_data(
+    payload = {
       type: :call_service, domain: :alarm_control_panel, service: :alarm_arm_home,
-      target: { entity_id: entity_id },
-      service_data: { code: code }
-    )
+      target: { entity_id: entity_id }
+    }
+    payload[:service_data] = { code: code } if code && !code.to_s.empty?
+    send_data(**payload)
   end
 
   def alarm_disarm(entity_id, code = nil)
-    send_data(
+    payload = {
       type: :call_service, domain: :alarm_control_panel, service: :alarm_disarm,
-      target: { entity_id: entity_id },
-      service_data: { code: code }
-    )
+      target: { entity_id: entity_id }
+    }
+    payload[:service_data] = { code: code } if code && !code.to_s.empty?
+    send_data(**payload)
   end
 end
 
