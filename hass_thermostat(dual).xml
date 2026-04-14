@@ -79,26 +79,26 @@
         <data type="character" terminator_type="end_of_data">
           <data_map match_required="yes">
             <map key="heating">
-              <update state="ThermostatCurrentHeatingStage1Status_1" type="string">On</update>
+              <update state="ThermostatCurrentHeatingStage1Status_1" type="string">ON</update>
               <update state="ThermostatCurrentHeatingStage1StatusDec_1" type="string">1</update>
               <update state="IsW1RelayEnergized_1" type="boolean">true</update>
-              <update state="ThermostatCurrentCoolingStage1Status_1" type="string">Off</update>
+              <update state="ThermostatCurrentCoolingStage1Status_1" type="string">OFF</update>
               <update state="ThermostatCurrentCoolingStage1StatusDec_1" type="string">0</update>
               <update state="IsY1RelayEnergized_1" type="boolean">false</update>
             </map>
             <map key="cooling">
-              <update state="ThermostatCurrentHeatingStage1Status_1" type="string">Off</update>
+              <update state="ThermostatCurrentHeatingStage1Status_1" type="string">OFF</update>
               <update state="ThermostatCurrentHeatingStage1StatusDec_1" type="string">0</update>
               <update state="IsW1RelayEnergized_1" type="boolean">false</update>
-              <update state="ThermostatCurrentCoolingStage1Status_1" type="string">On</update>
+              <update state="ThermostatCurrentCoolingStage1Status_1" type="string">ON</update>
               <update state="ThermostatCurrentCoolingStage1StatusDec_1" type="string">1</update>
               <update state="IsY1RelayEnergized_1" type="boolean">true</update>
             </map>
             <map key="idle">
-              <update state="ThermostatCurrentHeatingStage1Status_1" type="string">Off</update>
+              <update state="ThermostatCurrentHeatingStage1Status_1" type="string">OFF</update>
               <update state="ThermostatCurrentHeatingStage1StatusDec_1" type="string">0</update>
               <update state="IsW1RelayEnergized_1" type="boolean">false</update>
-              <update state="ThermostatCurrentCoolingStage1Status_1" type="string">Off</update>
+              <update state="ThermostatCurrentCoolingStage1Status_1" type="string">OFF</update>
               <update state="ThermostatCurrentCoolingStage1StatusDec_1" type="string">0</update>
               <update state="IsY1RelayEnergized_1" type="boolean">false</update>
             </map>
@@ -119,14 +119,14 @@
           <update state="CurrentState_1" type="string"/>
           <data_map match_required="yes">
             <map key="heat">
-              <update state="ThermostatMode_1" type="string">Heating</update>
+              <update state="ThermostatMode_1" type="string">HEAT</update>
               <update state="IsCurrentHVACModeHeat_1" type="boolean">true</update>
               <update state="IsCurrentHVACModeCool_1" type="boolean">false</update>
               <update state="IsCurrentHVACModeAuto_1" type="boolean">false</update>
               <update state="IsCurrentHVACModeOff_1" type="boolean">false</update>
             </map>
             <map key="cool">
-              <update state="ThermostatMode_1" type="string">Cooling</update>
+              <update state="ThermostatMode_1" type="string">COOL</update>
               <update state="IsCurrentHVACModeHeat_1" type="boolean">false</update>
               <update state="IsCurrentHVACModeCool_1" type="boolean">true</update>
               <update state="IsCurrentHVACModeAuto_1" type="boolean">false</update>
@@ -140,14 +140,14 @@
               <update state="IsCurrentHVACModeOff_1" type="boolean">true</update>
             </map>
             <map key="auto">
-              <update state="ThermostatMode_1" type="string">Auto</update>
+              <update state="ThermostatMode_1" type="string">AUTO</update>
               <update state="IsCurrentHVACModeHeat_1" type="boolean">false</update>
               <update state="IsCurrentHVACModeCool_1" type="boolean">false</update>
               <update state="IsCurrentHVACModeAuto_1" type="boolean">true</update>
               <update state="IsCurrentHVACModeOff_1" type="boolean">false</update>
             </map>
             <map key="heat_cool">
-              <update state="ThermostatMode_1" type="string">Auto</update>
+              <update state="ThermostatMode_1" type="string">AUTO</update>
               <update state="IsCurrentHVACModeHeat_1" type="boolean">false</update>
               <update state="IsCurrentHVACModeCool_1" type="boolean">false</update>
               <update state="IsCurrentHVACModeAuto_1" type="boolean">true</update>
@@ -229,19 +229,19 @@
         <data type="character" terminator_type="end_of_data">
           <data_map match_required="yes">
             <map key="on">
-                <update state="ThermostatFanMode_1" type="string">On</update>
+                <update state="ThermostatFanMode_1" type="string">ON</update>
                 <update state="IsThermostatCurrentFanModeAuto_1" type="boolean">false</update>
                 <update state="IsThermostatCurrentFanModeOn_1" type="boolean">true</update>
                 <update state="IsThermostatCurrentFanModeOff_1" type="boolean">false</update>
             </map>
             <map key="auto">
-                <update state="ThermostatFanMode_1" type="string">Auto</update>
+                <update state="ThermostatFanMode_1" type="string">AUTO</update>
                 <update state="IsThermostatCurrentFanModeAuto_1" type="boolean">true</update>
                 <update state="IsThermostatCurrentFanModeOn_1" type="boolean">false</update>
                 <update state="IsThermostatCurrentFanModeOff_1" type="boolean">false</update>
             </map>
             <map key="off">
-                <update state="ThermostatFanMode_1" type="string">Off</update>
+                <update state="ThermostatFanMode_1" type="string">OFF</update>
                 <update state="IsThermostatCurrentFanModeAuto_1" type="boolean">false</update>
                 <update state="IsThermostatCurrentFanModeOn_1" type="boolean">false</update>
                 <update state="IsThermostatCurrentFanModeOff_1" type="boolean">true</update>
