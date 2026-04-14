@@ -148,6 +148,15 @@
                             <update state="IsPartitionAlarmActive" type="boolean">false</update>
                             <update state="CurrentPartitionArmingStatus" type="string">ArmedStay</update>
                         </map>
+                        <map key="armed_home">
+                            <update state="CurrentPartitionStatus" type="string">Stay</update>
+                            <update state="IsPartitionReady" type="boolean">true</update>
+                            <update state="IsPartitionNotReady" type="boolean">false</update>
+                            <update state="IsPartitionArmed" type="boolean">true</update>
+                            <update state="IsPartitionDisarmed" type="boolean">false</update>
+                            <update state="IsPartitionAlarmActive" type="boolean">false</update>
+                            <update state="CurrentPartitionArmingStatus" type="string">ArmedStay</update>
+                        </map>
                         <map key="armed_away">
                             <update state="CurrentPartitionStatus" type="string">Away</update>
                             <update state="IsPartitionReady" type="boolean">true</update>
