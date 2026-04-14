@@ -627,6 +627,7 @@ class Hass
   include SocketInterface
   include HassMessageParsingMethods
   include HassRequests
+  include HassAlarmRequests
 
   POSTFIX = "\n"
 
@@ -782,8 +783,9 @@ class Hass
 
   def hass_request?(cmd)
     cmd = cmd.to_sym
-    LOG.debug([cmd, HassRequests.instance_methods(false)])
-    HassRequests.instance_methods(false).include?(cmd.to_sym)
+    methods = HassRequests.instance_methods(false) + HassAlarmRequests.instance_methods(false)
+    LOG.debug([cmd, methods])
+    methods.include?(cmd)
   end
 
   def handle_message(data)
