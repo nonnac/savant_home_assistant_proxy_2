@@ -138,9 +138,17 @@
           <data_map match_required="no">
             <map key="closed">
               <update state="IsShadeOpen" type="boolean">false</update>
+              <update state="GarageDoorStatus" type="string">Closed</update>
             </map>
             <map key="open">
               <update state="IsShadeOpen" type="boolean">true</update>
+              <update state="GarageDoorStatus" type="string">Open</update>
+            </map>
+            <map key="opening">
+              <update state="GarageDoorStatus" type="string">Opening</update>
+            </map>
+            <map key="closing">
+              <update state="GarageDoorStatus" type="string">Closing</update>
             </map>
             <map key="locked">
               <update state="DoorLockStatus" type="string">Locked</update>
