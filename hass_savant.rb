@@ -169,6 +169,17 @@ module HassMessageParsingMethods
     when Array
       update_with_array(eid, atr, parents + ['attributes'])
     end
+
+    # Also send updates for ct: aliased entity so kelvin slider gets state
+    if (ct_eid = @ct_aliases[eid])
+      update_hass_data(ct_eid, parents, 'state', message['state'])
+      case atr
+      when Hash
+        update_with_hash(ct_eid, atr, parents + ['attributes'])
+      when Array
+        update_with_array(ct_eid, atr, parents + ['attributes'])
+      end
+    end
   end
 
   #
@@ -362,13 +373,25 @@ module HassRequests
   end
 
   def dimmer_set(entity_id, level)
-    level.to_i.zero? ? dimmer_off(entity_id) : dimmer_on(entity_id, level)
+    if entity_id.start_with?('ct:')
+      real_id = entity_id.sub('ct:', '')
+      color_temp_set(real_id, level)
+    else
+      level.to_i.zero? ? dimmer_off(entity_id) : dimmer_on(entity_id, level)
+    end
   end
 
-  def color_temp_set(entity_id, kelvin)
+  # Default kelvin range — covers most smart bulbs
+  CT_MIN_KELVIN = 2000
+  CT_MAX_KELVIN = 6500
+
+  def color_temp_set(entity_id, pct)
+    # Savant sends 0-100 slider value, convert to kelvin
+    kelvin = CT_MIN_KELVIN + ((pct.to_f / 100.0) * (CT_MAX_KELVIN - CT_MIN_KELVIN)).round
+    LOG.debug([:color_temp_set, entity_id, "#{pct}% -> #{kelvin}K"])
     send_data(
       type: :call_service, domain: :light, service: :turn_on,
-      service_data: { color_temp_kelvin: kelvin.to_i },
+      service_data: { color_temp_kelvin: kelvin },
       target: { entity_id: entity_id }
     )
   end
@@ -653,6 +676,7 @@ class Hass
     @auth_required = true
     @substitute_id = {}
     @id_substitute = {}
+    @ct_aliases = {}  # maps real entity_id => ct:entity_id for color temp rows
     @authed_queue = []
     @id = 0
     connect_websocket
@@ -663,9 +687,21 @@ class Hass
     entity_array = entity_id.flatten
     return if entity_array.empty?
 
+    # Strip ct: prefix and track alias mapping
+    real_ids = entity_array.map do |eid|
+      if eid.start_with?('ct:')
+        real_id = eid.sub('ct:', '')
+        @ct_aliases[real_id] = eid
+        LOG.debug([:ct_alias, eid, '->', real_id])
+        real_id
+      else
+        eid
+      end
+    end.uniq
+
     send_json(
       type: 'subscribe_entities',
-      entity_ids: entity_array
+      entity_ids: real_ids
     )
   end
 
