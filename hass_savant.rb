@@ -365,6 +365,14 @@ module HassRequests
     level.to_i.zero? ? dimmer_off(entity_id) : dimmer_on(entity_id, level)
   end
 
+  def color_temp_set(entity_id, kelvin)
+    send_data(
+      type: :call_service, domain: :light, service: :turn_on,
+      service_data: { color_temp_kelvin: kelvin.to_i },
+      target: { entity_id: entity_id }
+    )
+  end
+
   def shade_set(entity_id, level)
     send_data(
       type: :call_service, domain: :cover, service: :set_cover_position,
